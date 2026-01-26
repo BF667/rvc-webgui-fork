@@ -28,33 +28,33 @@ jobs:
         id: vars
         run: echo "sha_short=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
-      - name: Check Disk Space
-        run: | 
-          set xe
-          df -H
-      # From here https://gist.github.com/antiphishfish/1e3fbc3f64ef6f1ab2f47457d2da5d9d
-      - name: Free Disk Space 
-        run: |
-          set -xe
-          mkdir empty_dir
-          sudo rsync -a --delete empty_dir/ /usr/share/dotnet
-          sudo rsync -a --delete empty_dir/ /usr/share/swift
-          sudo rsync -a --delete empty_dir/ /usr/local/lib/android
-          sudo rsync -a --delete empty_dir/ /opt/ghc
-          sudo rsync -a --delete empty_dir/ /usr/local/.ghcup
-          sudo rsync -a --delete empty_dir/ /usr/local/share/boost
-          sudo rsync -a --delete empty_dir/ "$AGENT_TOOLSDIRECTORY"
-          sudo rsync -a --delete empty_dir/ /opt/hostedtoolcache/
-          sudo rsync -a --delete empty_dir/ /usr/local/graalvm/
-          sudo rsync -a --delete empty_dir/ /usr/local/share/powershell
-          sudo rsync -a --delete empty_dir/ /usr/local/share/chromium
-          sudo rsync -a --delete empty_dir/ /usr/local/lib/node_modules
-          rm -rf empty_dir
+      # - name: Check Disk Space
+      #   run: | 
+      #     set xe
+      #     df -H
+      # # From here https://gist.github.com/antiphishfish/1e3fbc3f64ef6f1ab2f47457d2da5d9d
+      # - name: Free Disk Space 
+      #   run: |
+      #     set -xe
+      #     mkdir empty_dir
+      #     sudo rsync -a --delete empty_dir/ /usr/share/dotnet
+      #     sudo rsync -a --delete empty_dir/ /usr/share/swift
+      #     sudo rsync -a --delete empty_dir/ /usr/local/lib/android
+      #     sudo rsync -a --delete empty_dir/ /opt/ghc
+      #     sudo rsync -a --delete empty_dir/ /usr/local/.ghcup
+      #     sudo rsync -a --delete empty_dir/ /usr/local/share/boost
+      #     sudo rsync -a --delete empty_dir/ "$AGENT_TOOLSDIRECTORY"
+      #     sudo rsync -a --delete empty_dir/ /opt/hostedtoolcache/
+      #     sudo rsync -a --delete empty_dir/ /usr/local/graalvm/
+      #     sudo rsync -a --delete empty_dir/ /usr/local/share/powershell
+      #     sudo rsync -a --delete empty_dir/ /usr/local/share/chromium
+      #     sudo rsync -a --delete empty_dir/ /usr/local/lib/node_modules
+      #     rm -rf empty_dir
           
-      - name: After Cleanup
-        run: |
-          set -xe
-          df -H
+      # - name: After Cleanup
+      #   run: |
+      #     set -xe
+      #     df -H
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
