@@ -6,12 +6,14 @@ CACHE_DIR="${CACHE_DIR:-/cache}"
 UV_CACHE_DIR="${UV_CACHE_DIR:-$CACHE_DIR/uv}"
 MODELS_CACHE_DIR="${MODELS_CACHE_DIR:-$CACHE_DIR/models}"
 VENV_CACHE_DIR="${VENV_CACHE_DIR:-$CACHE_DIR/venv}"
+PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$CACHE_DIR/python}"
 
 # Create cache directories
-mkdir -p "$UV_CACHE_DIR" "$MODELS_CACHE_DIR" "$VENV_CACHE_DIR"
+mkdir -p "$UV_CACHE_DIR" "$MODELS_CACHE_DIR" "$VENV_CACHE_DIR" "$PYTHON_INSTALL_DIR"
 
-# Set UV cache location
+# Set UV environment variables for caching
 export UV_CACHE_DIR
+export UV_PYTHON_INSTALL_DIR="$PYTHON_INSTALL_DIR"
 
 echo "=== RVC WebUI Docker Startup ==="
 echo "Cache directory: $CACHE_DIR"
@@ -35,17 +37,12 @@ else
     echo "[✓] Python dependencies installed"
 fi
 
-# Symlink venv to expected location if not already there
-if [ ! -L "/app/.venv" ] && [ ! -d "/app/.venv" ]; then
-    ln -sf "$VENV_CACHE_DIR/.venv" /app/.venv
-elif [ ! -L "/app/.venv" ]; then
-    # If .venv exists but is not a symlink, remove and create symlink
-    rm -rf /app/.venv
-    ln -sf "$VENV_CACHE_DIR/.venv" /app/.venv
-fi
+# Symlink venv to expected location - always recreate to ensure correct target
+rm -rf /app/.venv 2>/dev/null || true
+ln -sf "$VENV_CACHE_DIR/.venv" /app/.venv
 
-# Ensure the symlinked venv is on PATH
-export PATH="/app/.venv/bin:$PATH"
+# Export the project environment for uv commands
+export UV_PROJECT_ENVIRONMENT="$VENV_CACHE_DIR/.venv"
 
 # ===== Model Download Setup =====
 setup_model_cache() {
@@ -84,7 +81,7 @@ else
     echo "[↓] Downloading models (first-time setup)..."
     echo "    This may take several minutes..."
     
-    python tools/download_models.py
+    uv run tools/download_models.py
     
     # Mark as complete
     touch "$MODELS_MARKER"
@@ -92,4 +89,4 @@ else
 fi
 
 echo "=== Starting RVC WebUI ==="
-exec python web_ui.py "$@"
+exec uv run python web_ui.py "$@"
