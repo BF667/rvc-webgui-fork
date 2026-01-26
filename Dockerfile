@@ -1,6 +1,5 @@
 FROM nvidia/cuda:12.2.2-devel-ubuntu22.04
 ARG DEBIAN_FRONTEND=noninteractive
-EXPOSE 7865
 
 RUN apt-get update && apt-get install -y \
     libasound-dev \
@@ -13,27 +12,35 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY ./.python-version ./.python-version
-COPY ./pyproject.toml ./pyproject.toml
-COPY ./uv.lock ./uv.lock
-# Download the latest installer
+# Download and install uv
 ADD https://astral.sh/uv/install.sh /uv-installer.sh
-
-# Run the installer then remove it
 RUN sh /uv-installer.sh && rm /uv-installer.sh
-
-# Ensure the installed binary is on the `PATH`
 ENV PATH="/root/.local/bin/:$PATH"
 
 # Copy from the cache instead of linking since it's a mounted volume
 ENV UV_LINK_MODE=copy
 
-RUN uv sync --locked
-# Place executables in the environment at the front of the path
-ENV PATH="/app/.venv/bin:$PATH"
-COPY ./tools/download_models.py ./tools/download_models.py
-RUN uv run tools/download_models.py
+# Copy project files needed for dependency resolution
+COPY ./.python-version ./.python-version
+COPY ./pyproject.toml ./pyproject.toml
+COPY ./uv.lock ./uv.lock
+
+# Copy the entrypoint script
+COPY ./docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+# Copy the rest of the application
 COPY . .
-# VOLUME [ "/app/weights", "/app/opt" ]
+
+# Set environment variables for cache directories (can be overridden)
+ENV CACHE_DIR=/cache
+ENV UV_CACHE_DIR=/cache/uv
+ENV MODELS_CACHE_DIR=/cache/models
+ENV VENV_CACHE_DIR=/cache/venv
+
+# Place venv executables at the front of the path (will be symlinked at runtime)
+ENV PATH="/app/.venv/bin:$PATH"
+
 EXPOSE 7865
-CMD ["python",  "web_ui.py"]
+
+ENTRYPOINT ["/docker-entrypoint.sh"]

@@ -5,9 +5,15 @@ services:
       dockerfile: Dockerfile
     container_name: rvc
     volumes:
+      # Cache volume for Python packages and models (persisted between restarts)
+      - ./docker-cache:/cache
+      # User data volumes (bind mounts for easy access)
       - ./assets/weights:/app/assets/weights
       - ./opt:/app/opt
-      # - ./dataset:/app/dataset # you can use this folder in order to provide your dataset for model training
+      # - ./datasets:/app/datasets # uncomment to provide datasets for training
     ports:
       - 7865:7865
     runtime: nvidia
+    # Named volume for caching Python packages and models
+    # This persists data between container restarts
+    # To clear the cache: docker compose down -v
