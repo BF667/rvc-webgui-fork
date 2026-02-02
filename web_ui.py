@@ -3,7 +3,7 @@ import fairseq
 import torch
 import gradio as gr
 import git
-import logging
+import logging, warning
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware import Middleware
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +28,11 @@ except Exception:
 
 if FairseqDictionary is not None:
     torch.serialization.add_safe_globals([FairseqDictionary])
+
+
+warnings.filterwarnings("ignore")
+for l in ["httpx", "uvicorn", "httpcore", "urllib3"]:
+    logging.getLogger(l).setLevel(logging.ERROR)
 
 
 with gr.Blocks(title="RVC WebUI Fork") as app:
