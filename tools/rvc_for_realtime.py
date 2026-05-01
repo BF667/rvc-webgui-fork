@@ -4,7 +4,7 @@ import pickle
 import sys
 import traceback
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, Literal, Protocol, cast
 from infer.lib import jit
 from infer.lib.jit.get_synthesizer import get_synthesizer
 from time import time as ttime
@@ -49,15 +49,15 @@ def printt(strr, *args):
 class RVC:
     def __init__(
         self,
-        key,
-        pth_path,
-        index_path,
-        index_rate,
-        n_cpu,
-        inp_q,
-        opt_q,
+        key: int,
+        pth_path: str | Path,
+        index_path: str,
+        index_rate: float,
+        n_cpu: int,
+        inp_q: Any,
+        opt_q: Any,
         config: Config,
-        last_rvc=None,
+        last_rvc: "RVC | None" = None,
     ) -> None:
         """
         Initialize
@@ -202,10 +202,10 @@ class RVC:
         except:
             printt(traceback.format_exc())
 
-    def change_key(self, new_key):
+    def change_key(self, new_key: int) -> None:
         self.f0_up_key = new_key
 
-    def change_index_rate(self, new_index_rate):
+    def change_index_rate(self, new_index_rate: float) -> None:
         if new_index_rate != 0 and self.index_rate == 0:
             self.index = faiss.read_index(self.index_path)
             self.big_npy = self.index.reconstruct_n(0, self.index.ntotal)
@@ -233,10 +233,10 @@ class RVC:
     def infer(
         self,
         input_wav: torch.Tensor,
-        block_frame_16k,
-        skip_head,
-        return_length,
-        f0method,
+        block_frame_16k: int,
+        skip_head: int,
+        return_length: int,
+        f0method: PitchMethod,
     ) -> torch.Tensor:
         t1 = ttime()
         with torch.no_grad():
@@ -308,10 +308,10 @@ class RVC:
         t4 = ttime()
         feats = F.interpolate(feats.permute(0, 2, 1), scale_factor=2).permute(0, 2, 1)
         feats = feats[:, :p_len, :]
-        p_len = torch.LongTensor([p_len]).to(self.device)
+        p_len_t = torch.LongTensor([p_len]).to(self.device)
         sid = torch.LongTensor([0]).to(self.device)
-        skip_head = torch.LongTensor([skip_head])
-        return_length = torch.LongTensor([return_length])
+        skip_head_t = torch.LongTensor([skip_head])
+        return_length_t = torch.LongTensor([return_length])
         net_g = cast(InferModule, self.net_g)
         with torch.no_grad():
             if self.if_f0 == 1:
@@ -319,16 +319,16 @@ class RVC:
                     raise RuntimeError("Pitch cache was not initialized")
                 infered_audio, _, _ = net_g.infer(
                     feats,
-                    p_len,
+                    p_len_t,
                     cache_pitch,
                     cache_pitchf,
                     sid,
-                    skip_head,
-                    return_length,
+                    skip_head_t,
+                    return_length_t,
                 )
             else:
                 infered_audio, _, _ = net_g.infer(
-                    feats, p_len, sid, skip_head, return_length
+                    feats, p_len_t, sid, skip_head_t, return_length_t
                 )
         t5 = ttime()
         printt(
