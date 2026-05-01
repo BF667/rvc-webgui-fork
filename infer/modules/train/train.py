@@ -218,8 +218,15 @@ def run(hps, training_logger):
 
     scaler = torch.amp.GradScaler("cuda", enabled=hps.train.fp16_run)
 
+    target_total_epoch = int(hps.total_epoch)
+    if epoch_str > target_total_epoch:
+        training_logger.warning(
+            f"Latest checkpoint starts at epoch {epoch_str}, which is beyond requested total_epoch {target_total_epoch}. Nothing to train."
+        )
+        return
+
     cache = []
-    for epoch in range(epoch_str, hps.train.epochs + 1):
+    for epoch in range(epoch_str, target_total_epoch + 1):
         train_and_evaluate(
             0,
             epoch,
@@ -233,8 +240,6 @@ def run(hps, training_logger):
             None,
             cache,
         )
-        # scheduler_g.step()
-        # scheduler_d.step()
 
 
 def train_and_evaluate(
