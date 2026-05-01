@@ -20,8 +20,14 @@ AudioInput: TypeAlias = torch.Tensor | np.ndarray
 
 class STFT(torch.nn.Module):
     def __init__(
-        self, filter_length=1024, hop_length=512, win_length=None, window="hann"
-    ):
+        self,
+        filter_length: int = 1024,
+        hop_length: int = 512,
+        win_length: int | None = None,
+        window: Literal[
+            "bartlett", "hann", "hamming", "blackman", "blackmanharris"
+        ] = "hann",
+    ) -> None:
         """
         This module implements an STFT using 1D convolution and 1D transpose convolutions.
         This is a bit tricky so there are some cases that probably won't work as working
@@ -137,7 +143,10 @@ class STFT(torch.nn.Module):
             :, 0, 0, self.pad_amount : -self.pad_amount
         ]
         window_square_sum = (
-            cast(torch.Tensor, self.fft_window).pow(2).repeat(cat.size(-1), 1).T.unsqueeze(0)
+            cast(torch.Tensor, self.fft_window)
+            .pow(2)
+            .repeat(cat.size(-1), 1)
+            .T.unsqueeze(0)
         )
         window_square_sum = fold(window_square_sum)[
             :, 0, 0, self.pad_amount : -self.pad_amount
@@ -164,7 +173,9 @@ from time import time as ttime
 
 
 class BiGRU(nn.Module):
-    def __init__(self, input_features: int, hidden_features: int, num_layers: int):
+    def __init__(
+        self, input_features: int, hidden_features: int, num_layers: int
+    ) -> None:
         super(BiGRU, self).__init__()
         self.gru = nn.GRU(
             input_features,
@@ -179,7 +190,9 @@ class BiGRU(nn.Module):
 
 
 class ConvBlockRes(nn.Module):
-    def __init__(self, in_channels, out_channels, momentum=0.01):
+    def __init__(
+        self, in_channels: int, out_channels: int, momentum: float = 0.01
+    ) -> None:
         super(ConvBlockRes, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(
@@ -217,14 +230,14 @@ class ConvBlockRes(nn.Module):
 class Encoder(nn.Module):
     def __init__(
         self,
-        in_channels,
-        in_size,
-        n_encoders,
-        kernel_size,
-        n_blocks,
-        out_channels=16,
-        momentum=0.01,
-    ):
+        in_channels: int,
+        in_size: int,
+        n_encoders: int,
+        kernel_size: int | tuple[int, int] | None,
+        n_blocks: int,
+        out_channels: int = 16,
+        momentum: float = 0.01,
+    ) -> None:
         super(Encoder, self).__init__()
         self.n_encoders = n_encoders
         self.bn = nn.BatchNorm2d(in_channels, momentum=momentum)
@@ -254,8 +267,13 @@ class Encoder(nn.Module):
 
 class ResEncoderBlock(nn.Module):
     def __init__(
-        self, in_channels, out_channels, kernel_size, n_blocks=1, momentum=0.01
-    ):
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int | tuple[int, int] | None,
+        n_blocks: int = 1,
+        momentum: float = 0.01,
+    ) -> None:
         super(ResEncoderBlock, self).__init__()
         self.n_blocks = n_blocks
         self.conv = nn.ModuleList()
@@ -263,7 +281,7 @@ class ResEncoderBlock(nn.Module):
         for i in range(n_blocks - 1):
             self.conv.append(ConvBlockRes(out_channels, out_channels, momentum))
         self.kernel_size = kernel_size
-        if self.kernel_size is not None:
+        if kernel_size is not None:
             self.pool = nn.AvgPool2d(kernel_size=kernel_size)
 
     def forward(self, x):
@@ -276,7 +294,14 @@ class ResEncoderBlock(nn.Module):
 
 
 class Intermediate(nn.Module):  #
-    def __init__(self, in_channels, out_channels, n_inters, n_blocks, momentum=0.01):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        n_inters: int,
+        n_blocks: int,
+        momentum: float = 0.01,
+    ) -> None:
         super(Intermediate, self).__init__()
         self.n_inters = n_inters
         self.layers = nn.ModuleList()
@@ -295,7 +320,14 @@ class Intermediate(nn.Module):  #
 
 
 class ResDecoderBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, stride, n_blocks=1, momentum=0.01):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        stride: int | tuple[int, int],
+        n_blocks: int = 1,
+        momentum: float = 0.01,
+    ) -> None:
         super(ResDecoderBlock, self).__init__()
         out_padding = (0, 1) if stride == (1, 2) else (1, 1)
         self.n_blocks = n_blocks
@@ -326,7 +358,14 @@ class ResDecoderBlock(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, in_channels, n_decoders, stride, n_blocks, momentum=0.01):
+    def __init__(
+        self,
+        in_channels: int,
+        n_decoders: int,
+        stride: int | tuple[int, int],
+        n_blocks: int,
+        momentum: float = 0.01,
+    ) -> None:
         super(Decoder, self).__init__()
         self.layers = nn.ModuleList()
         self.n_decoders = n_decoders
@@ -346,13 +385,13 @@ class Decoder(nn.Module):
 class DeepUnet(nn.Module):
     def __init__(
         self,
-        kernel_size,
-        n_blocks,
-        en_de_layers=5,
-        inter_layers=4,
-        in_channels=1,
-        en_out_channels=16,
-    ):
+        kernel_size: int | tuple[int, int],
+        n_blocks: int,
+        en_de_layers: int = 5,
+        inter_layers: int = 4,
+        in_channels: int = 1,
+        en_out_channels: int = 16,
+    ) -> None:
         super(DeepUnet, self).__init__()
         self.encoder = Encoder(
             in_channels, 128, en_de_layers, kernel_size, n_blocks, en_out_channels
@@ -379,12 +418,12 @@ class E2E(nn.Module):
         self,
         n_blocks: int,
         n_gru: int,
-        kernel_size,
-        en_de_layers=5,
-        inter_layers=4,
-        in_channels=1,
-        en_out_channels=16,
-    ):
+        kernel_size: int | tuple[int, int],
+        en_de_layers: int = 5,
+        inter_layers: int = 4,
+        in_channels: int = 1,
+        en_out_channels: int = 16,
+    ) -> None:
         super(E2E, self).__init__()
         self.unet = DeepUnet(
             kernel_size,
@@ -442,16 +481,16 @@ from librosa.filters import mel
 class MelSpectrogram(torch.nn.Module):
     def __init__(
         self,
-        is_half,
-        n_mel_channels,
-        sampling_rate,
-        win_length,
-        hop_length,
-        n_fft=None,
-        mel_fmin=0,
-        mel_fmax=None,
-        clamp=1e-5,
-    ):
+        is_half: bool,
+        n_mel_channels: int,
+        sampling_rate: int,
+        win_length: int,
+        hop_length: int,
+        n_fft: int | None = None,
+        mel_fmin: float = 0.0,
+        mel_fmax: float | None = None,
+        clamp: float = 1e-5,
+    ) -> None:
         super().__init__()
         n_fft = win_length if n_fft is None else n_fft
         self.hann_window = {}
@@ -474,7 +513,11 @@ class MelSpectrogram(torch.nn.Module):
         self.is_half = is_half
 
     def forward(
-        self, audio: torch.Tensor, keyshift: float = 0, speed: float = 1, center: bool = True
+        self,
+        audio: torch.Tensor,
+        keyshift: float = 0,
+        speed: float = 1,
+        center: bool = True,
     ) -> torch.Tensor:
         factor = 2 ** (keyshift / 12)
         n_fft_new = int(np.round(self.n_fft * factor))
@@ -678,9 +721,7 @@ class RMVPE:
             )
             hidden_chunk = cast(
                 torch.Tensor,
-                self.mel2hidden(
-                mel_chunk
-                ),
+                self.mel2hidden(mel_chunk),
             )  # Shape: (1, num_frames_in_chunk, 384)
 
             # Remove batch dimension
@@ -775,7 +816,9 @@ class RMVPE:
         f0 = self.decode(combined_hidden_np, thred=thred)
         return f0
 
-    def to_local_average_cents(self, salience: np.ndarray, thred: float = 0.05) -> np.ndarray:
+    def to_local_average_cents(
+        self, salience: np.ndarray, thred: float = 0.05
+    ) -> np.ndarray:
         # t0 = ttime()
         center = np.argmax(salience, axis=1)  # Frame length #index
         salience = np.pad(salience, ((0, 0), (4, 4)))  # Frame length, 368
@@ -806,7 +849,9 @@ if __name__ == "__main__":
     import librosa
     import soundfile as sf
 
-    audio, sampling_rate = sf.read(r"C:\Users\liujing04\Desktop\Z\Winter_Flower_clip1.wav")
+    audio, sampling_rate = sf.read(
+        r"C:\Users\liujing04\Desktop\Z\Winter_Flower_clip1.wav"
+    )
     if len(audio.shape) > 1:
         audio = librosa.to_mono(audio.transpose(1, 0))
     audio_bak = audio.copy()
