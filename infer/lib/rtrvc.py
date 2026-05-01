@@ -37,7 +37,7 @@ class RVC:
         self,
         key: int | float,
         formant: int | float,
-        pth_path: FileLike,  # type: ignore
+        pth_path: FileLike,
         index_path: str,
         index_rate: int | float,
         n_cpu: int | None = None,
@@ -99,7 +99,7 @@ class RVC:
 
         self.net_g: nn.Module | None = None
 
-        def set_default_model():
+        def set_default_model() -> None:
             self.net_g, cpt = load_synthesizer(self.pth_path, self.device)
             self.tgt_sr = synthesizer_target_sr(cpt["config"])
             cpt["config"][-3] = cpt["weight"]["emb_g.weight"].shape[0]
@@ -117,7 +117,7 @@ class RVC:
             else:
                 self.net_g = self.net_g.float()
 
-        def set_jit_model():
+        def set_jit_model() -> None:
             from lib.jit import get_jit_model
             from lib.synthesizer import synthesizer_jit_export
 
@@ -143,13 +143,13 @@ class RVC:
         if self.net_g is None:
             raise RuntimeError("RVC model failed to load")
 
-    def set_key(self, new_key):
+    def set_key(self, new_key: int | float) -> None:
         self.f0_up_key = new_key
 
-    def set_formant(self, new_formant):
+    def set_formant(self, new_formant: int | float) -> None:
         self.formant_shift = new_formant
 
-    def set_index_rate(self, new_index_rate):
+    def set_index_rate(self, new_index_rate: int | float) -> None:
         if new_index_rate > 0 and self.index_rate <= 0:
             self.index = faiss.read_index(self.index_path)
             self.big_npy = self.index.reconstruct_n(0, self.index.ntotal)
@@ -299,7 +299,7 @@ class RVC:
         f0_up_key: int | float,
         filter_radius: int | float | None = None,
         method: PitchMethod = "fcpe",
-    ):
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         c, f = self.f0_gen.calculate(
             x.cpu().numpy(), None, int(round(f0_up_key)), method, filter_radius
         )
