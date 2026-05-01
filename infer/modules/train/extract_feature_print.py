@@ -83,7 +83,7 @@ logger.add(
     exp_dir / "extract_f0_feature.log",
     level="INFO",
     serialize=True,
-    enqueue=True,
+    enqueue=False,
     backtrace=False,
     diagnose=False,
 )
@@ -114,6 +114,15 @@ def readwave(wav_path, normalize=False):
 
 
 # HuBERT model
+logger.bind(
+    event="ui_progress",
+    detail_event="feature_model_loading",
+    stage="extract_feature",
+    current=0,
+    total=1,
+    fraction=0.0,
+    message="Loading HuBERT model...",
+).info("Loading HuBERT model")
 logger.info(f"Loading HuBERT model from {model_path}")
 # if hubert model is exist
 if not os.access(model_path, os.F_OK):
@@ -133,6 +142,15 @@ with safe_globals([Dictionary]):
     )
 model = models[0]
 model = model.to(device)
+logger.bind(
+    event="ui_progress",
+    detail_event="feature_model_loaded",
+    stage="extract_feature",
+    current=0,
+    total=1,
+    fraction=0.0,
+    message=f"HuBERT model loaded on {device}. Preparing feature extraction...",
+).info("HuBERT model loaded")
 logger.info(f"Moved HuBERT model to {device}")
 if is_half:
     if device not in ["mps", "cpu"]:
@@ -143,9 +161,16 @@ todo = sorted(wavPath.iterdir(), key=lambda p: p.name)
 if len(todo) == 0:
     logger.bind(event="feature_empty", total=0).info("No features to extract")
 else:
-    logger.bind(event="feature_started", total=len(todo), version=version).info(
-        "Starting feature extraction"
-    )
+    logger.bind(
+        event="ui_progress",
+        detail_event="feature_started",
+        stage="extract_feature",
+        current=0,
+        total=len(todo),
+        fraction=0.0,
+        message=f"Starting feature extraction 0/{len(todo)}",
+        version=version,
+    ).info("Starting feature extraction")
     if saved_cfg is None:
         raise RuntimeError("HuBERT checkpoint did not include a saved config")
     normalize = saved_cfg.task.normalize
@@ -154,32 +179,41 @@ else:
             if file.suffix == ".wav":
                 wav_path = wavPath / file.name
                 out_path = outPath / file.with_suffix(".npy").name
+                logger.bind(
+                    event="ui_progress",
+                    detail_event="feature_processing",
+                    stage="extract_feature",
+                    current=idx,
+                    total=len(todo),
+                    fraction=idx / max(len(todo), 1),
+                    message=f"Processing features {idx + 1}/{len(todo)}: {file.name}",
+                    file=file.name,
+                ).info(f"Starting feature extraction for {file.name}")
 
-                if out_path.exists():
-                    continue
+                skipped = out_path.exists()
+                if not skipped:
+                    feats = readwave(wav_path, normalize=normalize)
+                    padding_mask = torch.BoolTensor(feats.shape).fill_(False)
+                    inputs = {
+                        "source": (
+                            feats.half().to(device)
+                            if is_half and device not in ["mps", "cpu"]
+                            else feats.to(device)
+                        ),
+                        "padding_mask": padding_mask.to(device),
+                        "output_layer": 9 if version == "v1" else 12,  # layer 9
+                    }
+                    with torch.no_grad():
+                        logits = model.extract_features(**inputs)
+                        feats = (
+                            model.final_proj(logits[0]) if version == "v1" else logits[0]
+                        )
 
-                feats = readwave(wav_path, normalize=normalize)
-                padding_mask = torch.BoolTensor(feats.shape).fill_(False)
-                inputs = {
-                    "source": (
-                        feats.half().to(device)
-                        if is_half and device not in ["mps", "cpu"]
-                        else feats.to(device)
-                    ),
-                    "padding_mask": padding_mask.to(device),
-                    "output_layer": 9 if version == "v1" else 12,  # layer 9
-                }
-                with torch.no_grad():
-                    logits = model.extract_features(**inputs)
-                    feats = (
-                        model.final_proj(logits[0]) if version == "v1" else logits[0]
-                    )
-
-                feats = feats.squeeze(0).float().cpu().numpy()
-                if np.isnan(feats).sum() == 0:
-                    np.save(out_path, feats, allow_pickle=False)
-                else:
-                    logger.warning(f"{file.name} contains NaN values")
+                    feats = feats.squeeze(0).float().cpu().numpy()
+                    if np.isnan(feats).sum() == 0:
+                        np.save(out_path, feats, allow_pickle=False)
+                    else:
+                        logger.warning(f"{file.name} contains NaN values")
                 logger.bind(
                     event="ui_progress",
                     detail_event="feature_progress",
@@ -189,7 +223,7 @@ else:
                     fraction=(idx + 1) / max(len(todo), 1),
                     message=f"Extracting features {idx + 1}/{len(todo)}: {file.name}",
                     file=file.name,
-                    output_shape=list(feats.shape),
+                    skipped=skipped,
                 ).info(f"Extracted features for {file.name}")
         except Exception:
             logger.bind(

@@ -176,7 +176,6 @@ def preprocess_dataset(
     ]
     logger.info(f"Execute: {shlex.join(cmd)}")
     p = subprocess.Popen(cmd, cwd=shared.now_dir)
-
     while True:
         records = read_json_log_records(log_path)
         fraction, description = get_latest_ui_progress(records)
@@ -263,7 +262,7 @@ def extract_f0_feature(
             records = read_json_log_records(log_path)
             fraction, description = get_latest_ui_progress(records)
             progress(fraction, desc=description)
-            sleep(1)
+            sleep(0.2)
             if p.poll() is not None:
                 break
         if p.wait() != 0:
@@ -300,7 +299,7 @@ def extract_f0_feature(
         records = read_json_log_records(log_path)
         fraction, description = get_latest_ui_progress(records)
         progress(fraction, desc=description)
-        sleep(1)
+        sleep(0.2)
         if p.poll() is not None:
             break
     records = read_json_log_records(log_path)
@@ -672,28 +671,24 @@ def one_click_training(
     version19,
     gpus_rmvpe,
 ):
-    infos: list[str] = []
-
-    def get_info_str(strr):
-        infos.append(strr)
-        return "\n".join(infos)
+    final_sections: list[str] = []
 
     # step1: Process data
-    yield get_info_str(shared.i18n("step1: processing data..."))
-    [get_info_str(_) for _ in preprocess_dataset(trainset_dir4, exp_dir1, sr2, np7)]
+    progress = gr.Progress()
+    progress(0.0, desc=shared.i18n("step1: processing data..."))
+    for update in preprocess_dataset(trainset_dir4, exp_dir1, sr2, np7):
+        final_sections.append(update)
 
     # step2a: Extract pitch
-    yield get_info_str(shared.i18n("step2: extracting feature & pitch"))
-    [
-        get_info_str(_)
-        for _ in extract_f0_feature(
-            gpus16, np7, f0method8, if_f0_3, exp_dir1, version19, gpus_rmvpe
-        )
-    ]
+    progress(0.0, desc=shared.i18n("step2: extracting feature & pitch"))
+    for update in extract_f0_feature(
+        gpus16, np7, f0method8, if_f0_3, exp_dir1, version19, gpus_rmvpe
+    ):
+        final_sections.append(update)
 
     # step3a: Train model
-    yield get_info_str(shared.i18n("step3a: Training model"))
-    click_train(
+    progress(0.0, desc=shared.i18n("step3a: Training model"))
+    for update in click_train(
         exp_dir1,
         sr2,
         if_f0_3,
@@ -708,14 +703,18 @@ def one_click_training(
         if_cache_gpu17,
         if_save_every_weights18,
         version19,
-    )
-    yield get_info_str(
+    ):
+        final_sections.append(update)
+    final_sections.append(
         i18n("Training finished, you can view the console training log or train.log in the experiment folder")
     )
 
     # step3b: Train index
-    [get_info_str(_) for _ in train_index(exp_dir1, version19)]
-    yield get_info_str(i18n("Full process completed!"))
+    progress(0.0, desc=i18n("Training index..."))
+    for update in train_index(exp_dir1, version19):
+        final_sections.append(update)
+    final_sections.append(i18n("Full process completed!"))
+    yield "\n\n".join(section for section in final_sections if section).strip()
 
 
 def create_train_tab():

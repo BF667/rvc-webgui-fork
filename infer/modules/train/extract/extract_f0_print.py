@@ -36,7 +36,7 @@ logger.add(
     exp_dir / "extract_f0_feature.log",
     level="INFO",
     serialize=True,
-    enqueue=True,
+    enqueue=False,
     backtrace=False,
     diagnose=False,
 )
@@ -50,6 +50,15 @@ class FeatureInput:
     def __init__(self, samplerate=16000, hop_size=160):
         self.fs = samplerate
         self.hop = hop_size
+        logger.bind(
+            event="ui_progress",
+            detail_event="f0_model_loading",
+            stage="extract_f0",
+            current=0,
+            total=1,
+            fraction=0.0,
+            message="Loading F0 extractor...",
+        ).info("Loading F0 extractor")
         self.f0_gen = Generator(
             Path("assets/rmvpe"),
             False,
@@ -64,12 +73,27 @@ class FeatureInput:
             logger.bind(event="f0_empty", total=0).info("No f0 files to process")
         else:
             logger.bind(
-                event="f0_started",
+                event="ui_progress",
+                detail_event="f0_started",
+                stage="extract_f0",
+                current=0,
                 total=len(paths),
+                fraction=0.0,
+                message=f"Starting pitch extraction 0/{len(paths)}",
                 method=f0_method,
             ).info("Starting f0 extraction")
             for idx, (inp_path, opt_path1, opt_path2) in enumerate(paths):
                 try:
+                    logger.bind(
+                        event="ui_progress",
+                        detail_event="f0_processing",
+                        stage="extract_f0",
+                        current=idx,
+                        total=len(paths),
+                        fraction=idx / max(len(paths), 1),
+                        message=f"Processing pitch {idx + 1}/{len(paths)}: {Path(inp_path).name}",
+                        file=inp_path,
+                    ).info(f"Starting f0 for {Path(inp_path).name}")
                     skipped = (
                         os.path.exists(opt_path1 + ".npy")
                         and os.path.exists(opt_path2 + ".npy")

@@ -90,6 +90,15 @@ def main():
         training_logger.warning(
             f"Multiple GPU ids were requested ({hps.gpus}), but training now runs in a single subprocess on GPU {selected_gpu} to avoid race conditions."
         )
+    training_logger.bind(
+        event="ui_progress",
+        detail_event="train_started",
+        stage="train",
+        current=0,
+        total=max(hps.total_epoch, 1),
+        fraction=0.0,
+        message=f"Starting training 0/{hps.total_epoch} epochs",
+    ).info("Starting training")
     run(hps, training_logger)
 
 
@@ -99,6 +108,15 @@ def run(hps, training_logger):
         event="train_hparams",
         hparams=utils.hparams_to_dict(hps),
     ).info("Loaded training configuration")
+    training_logger.bind(
+        event="ui_progress",
+        detail_event="train_setup",
+        stage="train",
+        current=0,
+        total=max(hps.total_epoch, 1),
+        fraction=0.0,
+        message="Preparing training data and models...",
+    ).info("Preparing training setup")
     utils.check_git_hash(hps.model_dir)
     torch.manual_seed(hps.train.seed)
     if torch.cuda.is_available():
