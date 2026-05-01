@@ -2,16 +2,51 @@ import logging
 import os
 import shutil
 from pathlib import Path
+from types import FrameType
 
 import warnings
 from dotenv import load_dotenv
+from loguru import logger
+
+
+class InterceptHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+
+        frame: FrameType | None = logging.currentframe()
+        depth = 2
+        while frame is not None and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+
+        logger.bind(stdlib_logger=record.name).opt(
+            depth=depth,
+            exception=record.exc_info,
+        ).log(level, record.getMessage())
+
+
+def configure_startup_logging() -> None:
+    logger.remove()
+    logger.add(
+        os.sys.stderr,
+        level="INFO",
+        backtrace=False,
+        diagnose=False,
+    )
+    logging.basicConfig(handlers=[InterceptHandler()], level=logging.INFO, force=True)
 
 load_dotenv()
+configure_startup_logging()
 logging.getLogger("numba").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("fairseq").setLevel(logging.WARNING)
 logging.getLogger("torio").setLevel(logging.ERROR)
 logging.getLogger("fairseq").setLevel(logging.WARNING)
+logging.getLogger("asyncio").setLevel(logging.INFO)
+logging.getLogger("git").setLevel(logging.INFO)
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 
@@ -20,8 +55,6 @@ import torch
 from configs.config import Config
 from i18n.i18n import I18nAuto
 from infer.modules.vc.modules import VC
-
-startup_logger = logging.getLogger(__name__)
 
 now_dir = Path.cwd()
 tmp = now_dir / "TEMP"
@@ -41,7 +74,7 @@ vc = VC(config)
 
 
 i18n = I18nAuto()
-startup_logger.info(i18n)
+logger.info(f"Use Language: {i18n}")
 # Get GPU count
 ngpu = torch.cuda.device_count()
 gpu_infos: list[str] = []
@@ -107,7 +140,7 @@ rmvpe_root = Path(os.getenv("RMVPE_ROOT", "assets/rmvpe"))
 
 names = []
 for entry in weight_root.iterdir():
-    startup_logger.debug("Checking weight candidate %s", entry.name)
+    logger.debug(f"Checking weight candidate {entry.name}")
     if entry.suffix == ".pth":
         names.append(entry.name)
 index_paths = [""]  # Fix for gradio 5

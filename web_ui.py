@@ -2,6 +2,7 @@ import warnings
 import logging
 import git
 import torch
+from loguru import logger
 
 # Try to import the Dictionary class in a way compatible with different fairseq versions
 try:
@@ -103,7 +104,7 @@ else:
     logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
     logging.getLogger("fastapi").setLevel(logging.WARNING)
 
-    print(f"Listening on http://0.0.0.0:{shared.config.listen_port}")
+    logger.info(f"Listening on http://0.0.0.0:{shared.config.listen_port}")
 
     # Run the server
     uvicorn.run(
