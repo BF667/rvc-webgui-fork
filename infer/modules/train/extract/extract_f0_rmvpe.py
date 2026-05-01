@@ -16,18 +16,14 @@ from lib.f0 import Generator
 from lib.accelerate_utils import device_string, get_accelerator, use_half_precision
 
 class ExtractF0RmvpeArgs(Tap):
-    # GPU ID assigned to this worker.
-    i_gpu: str
     # Experiment directory.
     exp_dir: Path
 
     def configure(self) -> None:
-        self.add_argument("i_gpu")
         self.add_argument("exp_dir")
 
 
 args = ExtractF0RmvpeArgs().parse_args()
-i_gpu = args.i_gpu
 exp_dir = args.exp_dir
 accelerator = get_accelerator()
 is_half = use_half_precision()
@@ -62,7 +58,7 @@ class FeatureInput:
             total=1,
             fraction=0.0,
             message="Loading RMVPE model...",
-            gpu=i_gpu,
+            device=device_string(),
         ).info("Loading RMVPE model")
         self.f0_gen = Generator(
             Path("assets/rmvpe"),
@@ -88,7 +84,7 @@ class FeatureInput:
                 fraction=0.0,
                 message=f"Starting RMVPE pitch extraction 0/{len(paths)}",
                 method=f0_method,
-                gpu=i_gpu,
+                device=device_string(),
             ).info("Starting RMVPE f0 extraction")
             for idx, (inp_path, opt_path1, opt_path2) in enumerate(paths):
                 try:
@@ -101,7 +97,7 @@ class FeatureInput:
                         fraction=idx / max(len(paths), 1),
                         message=f"Processing RMVPE pitch {idx + 1}/{len(paths)}: {Path(inp_path).name}",
                         file=inp_path,
-                        gpu=i_gpu,
+                        device=device_string(),
                     ).info(f"Starting RMVPE f0 for {Path(inp_path).name}")
                     skipped = Path(f"{opt_path1}.npy").exists() and Path(
                         f"{opt_path2}.npy"
@@ -128,7 +124,7 @@ class FeatureInput:
                         message=f"Extracting RMVPE pitch {idx + 1}/{len(paths)}: {Path(inp_path).name}",
                         file=inp_path,
                         skipped=skipped,
-                        gpu=i_gpu,
+                        device=device_string(),
                     ).info(f"Processed RMVPE f0 for {Path(inp_path).name}")
                 except Exception:
                     logger.bind(
@@ -140,13 +136,13 @@ class FeatureInput:
                         fraction=(idx + 1) / max(len(paths), 1),
                         message=f"RMVPE pitch extraction failed at {idx + 1}/{len(paths)}: {Path(inp_path).name}",
                         file=inp_path,
-                        gpu=i_gpu,
+                        device=device_string(),
                         traceback=traceback.format_exc(),
                     ).exception(f"Failed RMVPE f0 extraction for {Path(inp_path).name}")
 
 
 if __name__ == "__main__":
-    logger.bind(event="f0_args", argv=sys.argv[1:], gpu=i_gpu).info(
+    logger.bind(event="f0_args", argv=sys.argv[1:], device=device_string()).info(
         "Received RMVPE extraction args"
     )
     featureInput = FeatureInput()
@@ -170,5 +166,5 @@ if __name__ == "__main__":
         logger.bind(
             event="f0_failed",
             traceback=traceback.format_exc(),
-            gpu=i_gpu,
+            device=device_string(),
         ).exception("RMVPE extraction stage failed")

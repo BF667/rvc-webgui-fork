@@ -13,8 +13,6 @@ from loguru import logger
 from lib.accelerate_utils import get_accelerator, use_half_precision
 
 hps = utils.get_hparams()
-from random import shuffle
-
 import torch
 
 torch.backends.cudnn.deterministic = False
@@ -210,7 +208,6 @@ def run(hps, training_logger):
         )
         return
 
-    cache = []
     for epoch in range(epoch_str, target_total_epoch + 1):
         train_and_evaluate(
             0,
@@ -223,7 +220,6 @@ def run(hps, training_logger):
             [train_loader, None],
             training_logger,
             None,
-            cache,
         )
 
 
@@ -238,7 +234,6 @@ def train_and_evaluate(
     loaders,
     logger,
     writers,
-    cache,
 ):
     net_g, net_d = nets
     optim_g, optim_d = optims
@@ -254,47 +249,7 @@ def train_and_evaluate(
     net_d.train()
 
     # Prepare data iterator
-    if hps.if_cache_data_in_gpu == True:
-        # Use Cache
-        data_iterator = cache
-        if cache == []:
-            # Make new cache
-            for batch_idx, info in enumerate(train_loader):
-                # Unpack
-                (
-                    phone,
-                    phone_lengths,
-                    pitch,
-                    pitchf,
-                    spec,
-                    spec_lengths,
-                    wave,
-                    wave_lengths,
-                    sid,
-                ) = info
-                # Cache on list
-                cache.append(
-                    (
-                        batch_idx,
-                        (
-                            phone,
-                            phone_lengths,
-                            pitch,
-                            pitchf,
-                            spec,
-                            spec_lengths,
-                            wave,
-                            wave_lengths,
-                            sid,
-                        ),
-                    )
-                )
-        else:
-            # Load shuffled cache
-            shuffle(cache)
-    else:
-        # Loader
-        data_iterator = enumerate(train_loader)
+    data_iterator = enumerate(train_loader)
 
     # Run steps
     epoch_recorder = EpochRecorder()

@@ -43,8 +43,6 @@ class TrainArgs(Tap):
     if_f0: Literal[0, 1]
     # Whether to save only the latest G/D pth files, 1 or 0.
     if_latest: Literal[0, 1]
-    # Whether to cache the dataset in GPU memory, 1 or 0.
-    if_cache_data_in_gpu: Literal[0, 1]
 
     def configure(self) -> None:
         self.add_argument("-se", "--save_every_epoch")
@@ -58,7 +56,6 @@ class TrainArgs(Tap):
         self.add_argument("-v", "--version")
         self.add_argument("-f0", "--if_f0")
         self.add_argument("-l", "--if_latest")
-        self.add_argument("-c", "--if_cache_data_in_gpu")
 
 
 def load_checkpoint_d(
@@ -321,8 +318,6 @@ def get_hparams(init=True):
         if_latest                             done
       Model: if_f0                             done
       Sample rate: Auto-select config                  done
-      Whether to cache dataset into GPU: if_cache_data_in_gpu done
-
       -m:
         Auto-determine training_files path, change hps.data.training_files in train_nsf_load_pretrain.py    done
       -c is no longer needed
@@ -347,7 +342,6 @@ def get_hparams(init=True):
         if_f0=args.if_f0,
         if_latest=args.if_latest,
         save_every_weights=args.save_every_weights,
-        if_cache_data_in_gpu=args.if_cache_data_in_gpu,
         training_files=experiment_dir / "filelist.txt",
     )
     return HParams.from_config(config, runtime)
@@ -453,7 +447,6 @@ class HParamsRuntimeOverrides(BaseModel):
     if_f0: Literal[0, 1] = 1
     if_latest: Literal[0, 1] = 0
     save_every_weights: Literal["0", "1"] = "0"
-    if_cache_data_in_gpu: Literal[0, 1] = 0
     training_files: Path | None = None
 
 
@@ -525,8 +518,6 @@ class HParams:
     if_f0: Literal[0, 1] = 1
     if_latest: Literal[0, 1] = 0
     save_every_weights: Literal["0", "1"] = "0"
-    if_cache_data_in_gpu: Literal[0, 1] = 0
-
     @classmethod
     def from_config(
         cls,
@@ -603,5 +594,4 @@ class HParams:
             if_f0=runtime.if_f0,
             if_latest=runtime.if_latest,
             save_every_weights=runtime.save_every_weights,
-            if_cache_data_in_gpu=runtime.if_cache_data_in_gpu,
         )

@@ -77,22 +77,8 @@ vc = VC(config)
 i18n = I18nAuto()
 logger.info(f"Use Language: {i18n}")
 accelerator = get_accelerator()
-gpu_infos: list[str] = []
-mem: list[int] = []
-if_gpu_ok: bool = False
-
-if accelerator.device.type != "cpu":
-    if_gpu_ok = True
-    gpu_infos.append(f"0\tAccelerate {accelerator.device}")
-if if_gpu_ok and len(gpu_infos) > 0:
-    gpu_info = "\n".join(gpu_infos)
-    default_batch_size = max(min(mem) // 2, 1) if mem else 1
-else:
-    gpu_info = i18n(
-        "Unfortunately, you don't have a usable graphics card to support your training."
-    )
-    default_batch_size = 1
-gpus = "-".join([i[0] for i in gpu_infos])
+logger.info(f"Accelerate device: {accelerator.device}")
+default_batch_size = 1
 
 
 weight_root = Path(os.getenv("WEIGHT_ROOT", "assets/weights"))

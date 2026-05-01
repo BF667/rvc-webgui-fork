@@ -21,28 +21,10 @@ class ExtractFeatureCpuArgs(Tap):
         self.add_argument("version")
 
 
-class ExtractFeatureGpuArgs(Tap):
-    # GPU ID assigned to this worker.
-    i_gpu: str
-    # Experiment directory.
-    exp_dir: Path
-    # Model version.
-    version: str
-
-    def configure(self) -> None:
-        self.add_argument("i_gpu")
-        self.add_argument("exp_dir")
-        self.add_argument("version")
-
-
-if any(arg in {"-h", "--help"} for arg in sys.argv[1:]):
-    parsed_args = ExtractFeatureGpuArgs().parse_args()
-elif len(sys.argv) == 3:
+if any(arg in {"-h", "--help"} for arg in sys.argv[1:]) or len(sys.argv) == 3:
     parsed_args = ExtractFeatureCpuArgs().parse_args()
-elif len(sys.argv) == 4:
-    parsed_args = ExtractFeatureGpuArgs().parse_args()
 else:
-    raise ValueError("Expected positional arguments: [worker_id] exp_dir version")
+    raise ValueError("Expected positional arguments: exp_dir version")
 exp_dir = parsed_args.exp_dir
 version = parsed_args.version
 if version != "v2":

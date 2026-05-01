@@ -25,18 +25,9 @@ from shared import i18n
 
 ProgressComponent = gr.Progress
 
-F0GPUVisible = True
 SampleRate = SampleRateName
 PitchExtractionMethod = Literal["pm", "harvest", "dio", "rmvpe", "rmvpe_gpu"]
 MODEL_VERSION: ModelVersion = "v2"
-
-
-def change_f0_method(f0method8: PitchExtractionMethod) -> dict[str, object]:
-    if f0method8 == "rmvpe_gpu":
-        visible = F0GPUVisible
-    else:
-        visible = False
-    return {"visible": visible, "__type__": "update"}
 
 
 def read_json_log_records(log_path: pathlib.Path) -> list[JsonLogPayload]:
@@ -192,19 +183,22 @@ def preprocess_meta(
 
 
 def extract_f0_feature(
-    gpus: str,
-    n_p: int,
     f0method: PitchExtractionMethod,
+    n_p: int,
     exp_dir: str,
-    gpus_rmvpe: str,
     progress: gr.Progress = gr.Progress(),
 ) -> Generator[str, None, None]:
-    gpu_ids = gpus.split("-")
     log_dir = pathlib.Path(shared.now_dir) / "logs" / exp_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "extract_f0_feature.log"
     log_path.write_text("")
-    if f0method != "rmvpe_gpu":
+    if f0method == "rmvpe_gpu":
+        cmd = [
+            shared.config.python_cmd,
+            "infer/modules/train/extract/extract_f0_rmvpe.py",
+            str(log_dir),
+        ]
+    else:
         cmd = [
             shared.config.python_cmd,
             "infer/modules/train/extract/extract_f0_print.py",
@@ -212,20 +206,6 @@ def extract_f0_feature(
             str(n_p),
             f0method,
         ]
-    else:
-        if gpus_rmvpe != "-":
-            selected_gpu = gpus_rmvpe.split("-")[0]
-            cmd = [
-                shared.config.python_cmd,
-                "infer/modules/train/extract/extract_f0_rmvpe.py",
-                selected_gpu,
-                str(log_dir),
-            ]
-        else:
-            warning = "RMVPE GPU extraction was selected without a GPU id."
-            logger.warning(warning)
-            yield warning
-            return
     logger.info(f"Execute: {shlex.join(cmd)}")
     p = subprocess.Popen(cmd, cwd=shared.now_dir)
     while True:
@@ -238,27 +218,12 @@ def extract_f0_feature(
     if p.wait() != 0:
         yield "F0 extraction failed."
         return
-    # Open multiple processes for different parts
-    if len(gpu_ids) > 1:
-        logger.warning(
-            f"Multiple GPU ids were provided for feature extraction ({gpus}); using only {gpu_ids[0]} to avoid log races."
-        )
-    selected_gpu = gpu_ids[0] if gpu_ids and gpu_ids[0] else ""
-    if selected_gpu:
-        cmd = [
-            shared.config.python_cmd,
-            "infer/modules/train/extract_feature_print.py",
-            selected_gpu,
-            str(log_dir),
-            MODEL_VERSION,
-        ]
-    else:
-        cmd = [
-            shared.config.python_cmd,
-            "infer/modules/train/extract_feature_print.py",
-            str(log_dir),
-            MODEL_VERSION,
-        ]
+    cmd = [
+        shared.config.python_cmd,
+        "infer/modules/train/extract_feature_print.py",
+        str(log_dir),
+        MODEL_VERSION,
+    ]
     logger.info(f"Execute: {shlex.join(cmd)}")
     p = subprocess.Popen(cmd, cwd=shared.now_dir)
     while True:
@@ -320,7 +285,6 @@ def click_train(
     if_save_latest13: str,
     pretrained_G14: str,
     pretrained_D15: str,
-    if_cache_gpu17: str,
     if_save_every_weights18: str,
     progress: gr.Progress = gr.Progress(),
 ) -> Generator[str, None, None]:
@@ -421,8 +385,6 @@ def click_train(
         str(save_epoch10),
         "-l",
         str(1 if if_save_latest13 == i18n("Yes") else 0),
-        "-c",
-        str(1 if if_cache_gpu17 == i18n("Yes") else 0),
         "-sw",
         str(1 if if_save_every_weights18 == i18n("Yes") else 0),
         "-v",
@@ -576,10 +538,7 @@ def one_click_training(
     if_save_latest13: str,
     pretrained_G14: str,
     pretrained_D15: str,
-    feature_gpus: str,
-    if_cache_gpu17: str,
     if_save_every_weights18: str,
-    gpus_rmvpe: str,
 ) -> Generator[str, None, None]:
     final_sections: list[str] = []
 
@@ -593,11 +552,9 @@ def one_click_training(
     # step2a: Extract pitch
     progress(0.0, desc=shared.i18n("step2: extracting feature & pitch"))
     for update in extract_f0_feature(
-        feature_gpus,
-        np7,
         f0method8,
+        np7,
         exp_dir1,
-        gpus_rmvpe,
     ):
         if not is_skip_update(update):
             final_sections.append(str(update))
@@ -614,7 +571,6 @@ def one_click_training(
         if_save_latest13,
         pretrained_G14,
         pretrained_D15,
-        if_cache_gpu17,
         if_save_every_weights18,
     ):
         if not is_skip_update(update):
@@ -697,60 +653,22 @@ def create_train_tab() -> None:
             gr.Markdown(value=i18n("## Extract Pitch"))
             with gr.Row():
                 with gr.Column():
-                    gpus6 = gr.Textbox(
-                        label=i18n(
-                            "Enter card numbers separated by '-', e.g., 0-1-2 to use card 0, card 1, and card 2"
-                        ),
-                        value=shared.gpus,
-                        interactive=True,
-                        visible=F0GPUVisible,
-                    )
-                    gr.Textbox(
-                        label=i18n("GPU Info"),
-                        value=shared.gpu_info,
-                        visible=F0GPUVisible,
-                    )
-                with gr.Column():
-                    gr.Markdown(value=i18n("""### Select pitch extraction algorithm:
-                              
-                - PM speeds up vocal input.
-                
-                - DIO speeds up high-quality speech on weaker CPUs.
-                
-                - Harvest is higher quality but slower.
-                
-                - RMVPE is the best and slightly CPU/GPU-intensive."""))
                     f0method8 = gr.Radio(
-                        label="Method",
+                        label=i18n("Method"),
                         choices=["pm", "harvest", "dio", "rmvpe", "rmvpe_gpu"],
                         value="rmvpe_gpu",
                         interactive=True,
                     )
-                    gpus_rmvpe = gr.Textbox(
-                        label=i18n(
-                            "rmvpe card number config: Enter different process card numbers separated by '-', e.g., 0-0-1 uses 2 processes on card 0 and 1 process on card 1"
-                        ),
-                        value="%s-%s" % (shared.gpus, shared.gpus),
-                        interactive=True,
-                        visible=F0GPUVisible,
-                    )
                 with gr.Column():
                     extract_f0_btn = gr.Button(i18n("Extract"), variant="primary")
                     info2 = gr.Textbox(label=i18n("Info"), value="", max_lines=8)
-                    f0method8.change(
-                        fn=change_f0_method,
-                        inputs=[f0method8],
-                        outputs=[gpus_rmvpe],
-                    )
                     # progress = gr.Progress()
                     extract_f0_btn.click(
                         extract_f0_feature,
                         [
-                            gpus6,
-                            cpu_count,
                             f0method8,
+                            cpu_count,
                             experiment_name,
-                            gpus_rmvpe,
                         ],
                         [info2],
                         api_name="train_extract_f0_feature",
@@ -784,12 +702,6 @@ def create_train_tab() -> None:
                 )
                 if_save_latest13 = gr.Radio(
                     label=i18n("Only Save Latest Model"),
-                    choices=[i18n("Yes"), i18n("No")],
-                    value=i18n("No"),
-                    interactive=True,
-                )
-                if_cache_gpu17 = gr.Radio(
-                    label=i18n("Cache Data to GPU (Recommend for Data < 10 mins)"),
                     choices=[i18n("Yes"), i18n("No")],
                     value=i18n("No"),
                     interactive=True,
@@ -833,7 +745,6 @@ def create_train_tab() -> None:
                         if_save_latest13,
                         pretrained_G14,
                         pretrained_D15,
-                        if_cache_gpu17,
                         if_save_every_weights18,
                     ],
                     training_info,
@@ -855,10 +766,7 @@ def create_train_tab() -> None:
                         if_save_latest13,
                         pretrained_G14,
                         pretrained_D15,
-                        gpus6,
-                        if_cache_gpu17,
                         if_save_every_weights18,
-                        gpus_rmvpe,
                     ],
                     training_info,
                     api_name="train_start_all",
