@@ -2,10 +2,14 @@ version = 1
 revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
-    "python_full_version >= '3.13' and platform_machine != 's390x'",
-    "python_full_version >= '3.13' and platform_machine == 's390x'",
-    "python_full_version < '3.13' and platform_machine != 's390x'",
-    "python_full_version < '3.13' and platform_machine == 's390x'",
+    "python_full_version >= '3.13' and platform_machine != 's390x' and sys_platform != 'darwin'",
+    "python_full_version >= '3.13' and platform_machine == 's390x' and sys_platform != 'darwin'",
+    "python_full_version < '3.13' and platform_machine != 's390x' and sys_platform != 'darwin'",
+    "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform != 'darwin'",
+    "python_full_version >= '3.13' and platform_machine != 's390x' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_machine == 's390x' and sys_platform == 'darwin'",
+    "python_full_version < '3.13' and platform_machine != 's390x' and sys_platform == 'darwin'",
+    "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform == 'darwin'",
 ]
 
 [[package]]
@@ -483,9 +487,9 @@ name = "diffq-fixed"
 version = "0.2.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cython" },
-    { name = "numpy" },
-    { name = "torch" },
+    { name = "cython", marker = "sys_platform != 'darwin'" },
+    { name = "numpy", marker = "sys_platform != 'darwin'" },
+    { name = "torch", marker = "sys_platform != 'darwin'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/be/96/8ca5acf5ecfd4108aa6f345cef171f2fda0c081cf0e7430671712586f172/diffq_fixed-0.2.4.tar.gz", hash = "sha256:cbc906b76fa23d1cf3c0ae517fbab744d9624980a068fe7fbb00dede1d83208d", size = 189695, upload-time = "2024-11-07T21:33:26.204Z" }
 wheels = [
@@ -1391,7 +1395,7 @@ name = "nvidia-cudnn-cu12"
 version = "9.5.1.17"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12", marker = "platform_machine != 's390x'" },
+    { name = "nvidia-cublas-cu12", marker = "sys_platform != 'darwin'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2a/78/4535c9c7f859a64781e43c969a3a7e84c54634e319a996d43ef32ce46f83/nvidia_cudnn_cu12-9.5.1.17-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:30ac3869f6db17d170e0e556dd6cc5eee02647abc31ca856634d5a40f82c15b2", size = 570988386, upload-time = "2024-10-25T19:54:26.39Z" },
@@ -1402,7 +1406,7 @@ name = "nvidia-cufft-cu12"
 version = "11.3.0.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "platform_machine != 's390x'" },
+    { name = "nvidia-nvjitlink-cu12", marker = "sys_platform != 'darwin'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8f/16/73727675941ab8e6ffd86ca3a4b7b47065edcca7a997920b831f8147c99d/nvidia_cufft_cu12-11.3.0.4-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:ccba62eb9cef5559abd5e0d54ceed2d9934030f51163df018532142a8ec533e5", size = 200221632, upload-time = "2024-11-20T17:41:32.357Z" },
@@ -1431,9 +1435,9 @@ name = "nvidia-cusolver-cu12"
 version = "11.7.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12", marker = "platform_machine != 's390x'" },
-    { name = "nvidia-cusparse-cu12", marker = "platform_machine != 's390x'" },
-    { name = "nvidia-nvjitlink-cu12", marker = "platform_machine != 's390x'" },
+    { name = "nvidia-cublas-cu12", marker = "sys_platform != 'darwin'" },
+    { name = "nvidia-cusparse-cu12", marker = "sys_platform != 'darwin'" },
+    { name = "nvidia-nvjitlink-cu12", marker = "sys_platform != 'darwin'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f0/6e/c2cf12c9ff8b872e92b4a5740701e51ff17689c4d726fca91875b07f655d/nvidia_cusolver_cu12-11.7.1.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:e9e49843a7707e42022babb9bcfa33c29857a93b88020c4e4434656a655b698c", size = 158229790, upload-time = "2024-11-20T17:43:43.211Z" },
@@ -1445,7 +1449,7 @@ name = "nvidia-cusparse-cu12"
 version = "12.5.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "platform_machine != 's390x'" },
+    { name = "nvidia-nvjitlink-cu12", marker = "sys_platform != 'darwin'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/06/1e/b8b7c2f4099a37b96af5c9bb158632ea9e5d9d27d7391d7eb8fc45236674/nvidia_cusparse_cu12-12.5.4.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:7556d9eca156e18184b94947ade0fba5bb47d69cec46bf8660fd2c71a4b48b73", size = 216561367, upload-time = "2024-11-20T17:44:54.824Z" },
@@ -1544,16 +1548,33 @@ wheels = [
 ]
 
 [[package]]
+name = "onnxruntime"
+version = "1.22.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "coloredlogs", marker = "sys_platform == 'darwin'" },
+    { name = "flatbuffers", marker = "sys_platform == 'darwin'" },
+    { name = "numpy", marker = "sys_platform == 'darwin'" },
+    { name = "packaging", marker = "sys_platform == 'darwin'" },
+    { name = "protobuf", marker = "sys_platform == 'darwin'" },
+    { name = "sympy", marker = "sys_platform == 'darwin'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4d/de/9162872c6e502e9ac8c99a98a8738b2fab408123d11de55022ac4f92562a/onnxruntime-1.22.0-cp312-cp312-macosx_13_0_universal2.whl", hash = "sha256:f3c0380f53c1e72a41b3f4d6af2ccc01df2c17844072233442c3a7e74851ab97", size = 34298046, upload-time = "2025-05-09T20:26:02.399Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/65/5cb5018d5b0b7cba820d2c4a1d1b02d40df538d49138ba36a509457e4df6/onnxruntime-1.22.0-cp313-cp313-macosx_13_0_universal2.whl", hash = "sha256:fe7c051236aae16d8e2e9ffbfc1e115a0cc2450e873a9c4cb75c0cc96c1dae07", size = 34298715, upload-time = "2025-05-09T20:26:05.634Z" },
+]
+
+[[package]]
 name = "onnxruntime-gpu"
 version = "1.22.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "coloredlogs" },
-    { name = "flatbuffers" },
-    { name = "numpy" },
-    { name = "packaging" },
-    { name = "protobuf" },
-    { name = "sympy" },
+    { name = "coloredlogs", marker = "sys_platform != 'darwin'" },
+    { name = "flatbuffers", marker = "sys_platform != 'darwin'" },
+    { name = "numpy", marker = "sys_platform != 'darwin'" },
+    { name = "packaging", marker = "sys_platform != 'darwin'" },
+    { name = "protobuf", marker = "sys_platform != 'darwin'" },
+    { name = "sympy", marker = "sys_platform != 'darwin'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b5/5c/3f9700ba277d52c121dd2cebc8a672fb60b53e888972fc6682b6692a766c/onnxruntime_gpu-1.22.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:86b064c8f6cbe6da03f51f46351237d985f8fd5eb907d3f9997ea91881131a13", size = 283199528, upload-time = "2025-05-09T19:39:54.489Z" },
@@ -1792,7 +1813,7 @@ wheels = [
 
 [package.optional-dependencies]
 gpu = [
-    { name = "onnxruntime-gpu" },
+    { name = "onnxruntime-gpu", marker = "sys_platform != 'darwin'" },
 ]
 
 [[package]]
@@ -2275,8 +2296,10 @@ dependencies = [
     { name = "librosa" },
     { name = "loguru" },
     { name = "numpy" },
+    { name = "onnxruntime", marker = "sys_platform == 'darwin'" },
     { name = "onnxruntime-gpu", marker = "sys_platform != 'darwin'" },
-    { name = "poluvr", extra = ["gpu"] },
+    { name = "poluvr" },
+    { name = "poluvr", extra = ["gpu"], marker = "sys_platform != 'darwin'" },
     { name = "praat-parselmouth" },
     { name = "python-dotenv" },
     { name = "pyworld" },
@@ -2313,8 +2336,10 @@ requires-dist = [
     { name = "librosa", specifier = ">=0.11.0" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "numpy", specifier = ">=1.23.5" },
+    { name = "onnxruntime", marker = "sys_platform == 'darwin'", specifier = "==1.22.0" },
     { name = "onnxruntime-gpu", marker = "sys_platform != 'darwin'", specifier = "==1.22.0" },
-    { name = "poluvr", extras = ["gpu"], specifier = ">=1.9.0" },
+    { name = "poluvr", marker = "sys_platform == 'darwin'", specifier = ">=1.9.0" },
+    { name = "poluvr", extras = ["gpu"], marker = "sys_platform != 'darwin'", specifier = ">=1.9.0" },
     { name = "praat-parselmouth", specifier = ">=0.4.2" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "pyworld", specifier = ">=0.3.5" },
@@ -2840,7 +2865,7 @@ name = "triton"
 version = "3.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "setuptools", marker = "platform_machine != 's390x'" },
+    { name = "setuptools", marker = "sys_platform != 'darwin'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/11/53/ce18470914ab6cfbec9384ee565d23c4d1c55f0548160b1c7b33000b11fd/triton-3.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:b68c778f6c4218403a6bd01be7484f6dc9e20fe2083d22dd8aef33e3b87a10a3", size = 156504509, upload-time = "2025-04-09T20:27:40.413Z" },
