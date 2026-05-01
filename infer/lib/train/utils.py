@@ -336,7 +336,8 @@ def get_hparams(init=True):
         config = json.load(f)
 
     hparams = HParams(**config)
-    hparams.model_dir = hparams.experiment_dir = str(experiment_dir)
+    hparams.model_dir = experiment_dir
+    hparams.experiment_dir = experiment_dir
     hparams.save_every_epoch = args.save_every_epoch
     hparams.name = name
     hparams.total_epoch = args.total_epoch
@@ -350,7 +351,7 @@ def get_hparams(init=True):
     hparams.if_latest = args.if_latest
     hparams.save_every_weights = args.save_every_weights
     hparams.if_cache_data_in_gpu = args.if_cache_data_in_gpu
-    hparams.data.training_files = str(experiment_dir / "filelist.txt")
+    hparams.data.training_files = experiment_dir / "filelist.txt"
     return hparams
 
 
@@ -361,7 +362,7 @@ def get_hparams_from_dir(model_dir: Path):
     config = json.loads(data)
 
     hparams = HParams(**config)
-    hparams.model_dir = str(model_dir)
+    hparams.model_dir = model_dir
     return hparams
 
 
@@ -444,8 +445,8 @@ def hparams_to_dict(value: Any) -> Any:
 
 
 class HParams:
-    model_dir: str
-    experiment_dir: str
+    model_dir: Path
+    experiment_dir: Path
     save_every_epoch: int
     name: str
     total_epoch: int
@@ -461,7 +462,7 @@ class HParams:
     save_every_weights: str
     if_cache_data_in_gpu: int
     data: "HParams"
-    training_files: str
+    training_files: Path
 
     def __init__(self, **kwargs: object) -> None:
         for k, v in kwargs.items():

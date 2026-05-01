@@ -20,8 +20,8 @@ class Encoder(nn.Module):
         kernel_size: int = 1,
         p_dropout: float = 0.0,
         window_size: int = 10,
-        **kwargs,
-    ):
+        **kwargs: object,
+    ) -> None:
         super(Encoder, self).__init__()
         self.hidden_channels = hidden_channels
         self.filter_channels = filter_channels
@@ -87,8 +87,8 @@ class Decoder(nn.Module):
         p_dropout: float = 0.0,
         proximal_bias: bool = False,
         proximal_init: bool = True,
-        **kwargs,
-    ):
+        **kwargs: object,
+    ) -> None:
         super(Decoder, self).__init__()
         self.hidden_channels = hidden_channels
         self.filter_channels = filter_channels
@@ -176,11 +176,11 @@ class MultiHeadAttention(nn.Module):
         n_heads: int,
         p_dropout: float = 0.0,
         window_size: int | None = None,
-        heads_share=True,
+        heads_share: bool = True,
         block_length: int | None = None,
-        proximal_bias=False,
-        proximal_init=False,
-    ):
+        proximal_bias: bool = False,
+        proximal_init: bool = False,
+    ) -> None:
         super(MultiHeadAttention, self).__init__()
         assert channels % n_heads == 0
 
@@ -226,7 +226,7 @@ class MultiHeadAttention(nn.Module):
 
     def forward(
         self, x: torch.Tensor, c: torch.Tensor, attn_mask: torch.Tensor | None = None
-    ):
+    ) -> torch.Tensor:
         q = self.conv_q(x)
         k = self.conv_k(c)
         v = self.conv_v(c)
@@ -242,7 +242,7 @@ class MultiHeadAttention(nn.Module):
         key: torch.Tensor,
         value: torch.Tensor,
         mask: torch.Tensor | None = None,
-    ):
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         # reshape [b, d, t] -> [b, n_h, t, d_k]
         b, d, t_s = key.size()
         t_t = query.size(2)
@@ -409,8 +409,8 @@ class FFN(nn.Module):
         kernel_size: int,
         p_dropout: float = 0.0,
         activation: str | None = None,
-        causal=False,
-    ):
+        causal: bool = False,
+    ) -> None:
         super(FFN, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels

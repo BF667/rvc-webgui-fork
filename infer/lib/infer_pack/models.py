@@ -24,16 +24,16 @@ def remove_weight_norm(module: nn.Module, name: str = "weight") -> nn.Module:
 class TextEncoder(nn.Module):
     def __init__(
         self,
-        in_channels,
-        out_channels,
-        hidden_channels,
-        filter_channels,
-        n_heads,
-        n_layers,
-        kernel_size,
-        p_dropout,
-        f0=True,
-    ):
+        in_channels: int,
+        out_channels: int,
+        hidden_channels: int,
+        filter_channels: int,
+        n_heads: int,
+        n_layers: int,
+        kernel_size: int,
+        p_dropout: float,
+        f0: bool = True,
+    ) -> None:
         super(TextEncoder, self).__init__()
         self.out_channels = out_channels
         self.hidden_channels = hidden_channels
@@ -59,10 +59,10 @@ class TextEncoder(nn.Module):
     def forward(
         self,
         phone: torch.Tensor,
-        pitch: torch.Tensor,
+        pitch: torch.Tensor | None,
         lengths: torch.Tensor,
         skip_head: torch.Tensor | None = None,
-    ):
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if pitch is None:
             x = self.emb_phone(phone)
         else:
@@ -87,14 +87,14 @@ class TextEncoder(nn.Module):
 class ResidualCouplingBlock(nn.Module):
     def __init__(
         self,
-        channels,
-        hidden_channels,
-        kernel_size,
-        dilation_rate,
-        n_layers,
-        n_flows=4,
-        gin_channels=0,
-    ):
+        channels: int,
+        hidden_channels: int,
+        kernel_size: int,
+        dilation_rate: int,
+        n_layers: int,
+        n_flows: int = 4,
+        gin_channels: int = 0,
+    ) -> None:
         super(ResidualCouplingBlock, self).__init__()
         self.channels = channels
         self.hidden_channels = hidden_channels
@@ -125,7 +125,7 @@ class ResidualCouplingBlock(nn.Module):
         x_mask: torch.Tensor,
         g: torch.Tensor | None = None,
         reverse: bool = False,
-    ):
+    ) -> torch.Tensor:
         if not reverse:
             for flow in self.flows:
                 x, _ = flow(x, x_mask, g=g, reverse=reverse)
@@ -154,14 +154,14 @@ class ResidualCouplingBlock(nn.Module):
 class PosteriorEncoder(nn.Module):
     def __init__(
         self,
-        in_channels,
-        out_channels,
-        hidden_channels,
-        kernel_size,
-        dilation_rate,
-        n_layers,
-        gin_channels=0,
-    ):
+        in_channels: int,
+        out_channels: int,
+        hidden_channels: int,
+        kernel_size: int,
+        dilation_rate: int,
+        n_layers: int,
+        gin_channels: int = 0,
+    ) -> None:
         super(PosteriorEncoder, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -183,7 +183,7 @@ class PosteriorEncoder(nn.Module):
 
     def forward(
         self, x: torch.Tensor, x_lengths: torch.Tensor, g: torch.Tensor | None = None
-    ):
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(
             x.dtype
         )
@@ -210,22 +210,22 @@ class PosteriorEncoder(nn.Module):
 class Generator(torch.nn.Module):
     def __init__(
         self,
-        initial_channel,
-        resblock,
-        resblock_kernel_sizes,
-        resblock_dilation_sizes,
-        upsample_rates,
-        upsample_initial_channel,
-        upsample_kernel_sizes,
-        gin_channels=0,
-    ):
+        initial_channel: int,
+        resblock: str,
+        resblock_kernel_sizes: Sequence[int],
+        resblock_dilation_sizes: Sequence[Sequence[int]],
+        upsample_rates: Sequence[int],
+        upsample_initial_channel: int,
+        upsample_kernel_sizes: Sequence[int],
+        gin_channels: int = 0,
+    ) -> None:
         super(Generator, self).__init__()
         self.num_kernels = len(resblock_kernel_sizes)
         self.num_upsamples = len(upsample_rates)
         self.conv_pre = Conv1d(
             initial_channel, upsample_initial_channel, 7, 1, padding=3
         )
-        resblock = modules.ResBlock1 if resblock == "1" else modules.ResBlock2
+        resblock_cls = modules.ResBlock1 if resblock == "1" else modules.ResBlock2
 
         self.ups = nn.ModuleList()
         for i, (u, k) in enumerate(zip(upsample_rates, upsample_kernel_sizes)):
@@ -247,7 +247,7 @@ class Generator(torch.nn.Module):
             for j, (k, d) in enumerate(
                 zip(resblock_kernel_sizes, resblock_dilation_sizes)
             ):
-                self.resblocks.append(resblock(ch, k, d))
+                self.resblocks.append(resblock_cls(ch, k, d))
 
         self.conv_post = Conv1d(ch, 1, 7, 1, padding=3, bias=False)  # type: ignore[unbound-name]
         self.ups.apply(init_weights)

@@ -26,7 +26,7 @@ type FloatArray = NDArray[np.floating]
 
 
 class LayerNorm(nn.Module):
-    def __init__(self, channels, eps=1e-5):
+    def __init__(self, channels: int, eps: float = 1e-5) -> None:
         super(LayerNorm, self).__init__()
         self.channels = channels
         self.eps = eps
@@ -43,13 +43,13 @@ class LayerNorm(nn.Module):
 class ConvReluNorm(nn.Module):
     def __init__(
         self,
-        in_channels,
-        hidden_channels,
-        out_channels,
-        kernel_size,
-        n_layers,
-        p_dropout,
-    ):
+        in_channels: int,
+        hidden_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        n_layers: int,
+        p_dropout: float,
+    ) -> None:
         super(ConvReluNorm, self).__init__()
         self.in_channels = in_channels
         self.hidden_channels = hidden_channels
@@ -98,7 +98,13 @@ class DDSConv(nn.Module):
     Dialted and Depth-Separable Convolution
     """
 
-    def __init__(self, channels, kernel_size, n_layers, p_dropout=0.0):
+    def __init__(
+        self,
+        channels: int,
+        kernel_size: int,
+        n_layers: int,
+        p_dropout: float = 0.0,
+    ) -> None:
         super(DDSConv, self).__init__()
         self.channels = channels
         self.kernel_size = kernel_size
@@ -145,13 +151,13 @@ class DDSConv(nn.Module):
 class WN(torch.nn.Module):
     def __init__(
         self,
-        hidden_channels,
-        kernel_size,
-        dilation_rate,
-        n_layers,
-        gin_channels=0,
-        p_dropout=0,
-    ):
+        hidden_channels: int,
+        kernel_size: int,
+        dilation_rate: int,
+        n_layers: int,
+        gin_channels: int = 0,
+        p_dropout: float = 0,
+    ) -> None:
         super(WN, self).__init__()
         assert kernel_size % 2 == 1
         self.hidden_channels = hidden_channels
