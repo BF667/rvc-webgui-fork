@@ -229,16 +229,26 @@ def save_checkpoint_d(
 
 
 class SummaryWriter(Protocol):
-    def add_scalar(self, tag: str, scalar_value: object, global_step: int) -> object: ...
+    def add_scalar(
+        self, tag: str, scalar_value: object, global_step: int
+    ) -> object: ...
 
     def add_histogram(self, tag: str, values: object, global_step: int) -> object: ...
 
     def add_image(
-        self, tag: str, img_tensor: NDArray[np.generic], global_step: int, dataformats: str
+        self,
+        tag: str,
+        img_tensor: NDArray[np.generic],
+        global_step: int,
+        dataformats: str,
     ) -> object: ...
 
     def add_audio(
-        self, tag: str, snd_tensor: NDArray[np.generic], global_step: int, sample_rate: int
+        self,
+        tag: str,
+        snd_tensor: NDArray[np.generic],
+        global_step: int,
+        sample_rate: int,
     ) -> object: ...
 
 
@@ -266,7 +276,9 @@ def summarize(
 
 
 def latest_checkpoint_path(dir_path: Path, regex: str = "G_*.pth") -> Path:
-    f_list = sorted(dir_path.glob(regex), key=lambda f: int("".join(filter(str.isdigit, f.name))))
+    f_list = sorted(
+        dir_path.glob(regex), key=lambda f: int("".join(filter(str.isdigit, f.name)))
+    )
     x = f_list[-1]
     logger.debug(x)
     return x
@@ -277,15 +289,25 @@ def load_wav_to_torch(full_path: Path):
     return torch.FloatTensor(data.astype(np.float32)), sampling_rate
 
 
-def load_filepaths_and_text(filename: Path, split="|"):
+def load_filepaths_and_text(filename: Path, split: str = "|") -> list[tuple[Path, Path, Path, Path, str]] | list[tuple[Path, Path, str]]:
     try:
         with open(filename, encoding="utf-8") as f:
-            filepaths_and_text = [line.strip().split(split) for line in f]
+            lines = f.readlines()
     except UnicodeDecodeError:
         with open(filename) as f:
-            filepaths_and_text = [line.strip().split(split) for line in f]
+            lines = f.readlines()
 
-    return filepaths_and_text
+    res = []
+    for line in lines:
+        parts = line.strip().split(split)
+        if len(parts) == 5:
+            res.append((Path(parts[0]), Path(parts[1]), Path(parts[2]), Path(parts[3]), parts[4]))
+        elif len(parts) == 3:
+            res.append((Path(parts[0]), Path(parts[1]), parts[2]))
+        else:
+            raise ValueError(f"Unexpected number of parts in {filename}: {len(parts)}")
+
+    return res
 
 
 def get_hparams(init=True):
