@@ -306,6 +306,9 @@ def extract_f0_feature(
             break
     records = read_json_log_records(log_path)
     log = format_log_messages(records)
+    if p.wait() != 0:
+        yield "Feature extraction failed.\n" + log if log else "Feature extraction failed."
+        return
     logger.info(f"Feature extraction stage completed for {exp_dir}")
     yield log
 
@@ -359,30 +362,48 @@ def click_train(
     progress: gr.Progress = gr.Progress(),
 ) -> Generator[str, None, None]:
     # Generating file list
-    exp_dir = "%s/logs/%s" % (shared.now_dir, exp_dir1)
-    os.makedirs(exp_dir, exist_ok=True)
-    gt_wavs_dir = "%s/0_gt_wavs" % (exp_dir)
-    feature_dir = "%s/3_feature768" % (exp_dir)
-    f0_dir = "%s/2a_f0" % (exp_dir)
-    f0nsf_dir = "%s/2b-f0nsf" % (exp_dir)
+    exp_dir = pathlib.Path(shared.now_dir) / "logs" / exp_dir1
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    gt_wavs_dir = exp_dir / "0_gt_wavs"
+    feature_dir = exp_dir / "3_feature768"
+    f0_dir = exp_dir / "2a_f0"
+    f0nsf_dir = exp_dir / "2b-f0nsf"
+    missing_dirs = [
+        str(path)
+        for path in (gt_wavs_dir, feature_dir, f0_dir, f0nsf_dir)
+        if not path.exists()
+    ]
+    if missing_dirs:
+        yield (
+            "Training data is incomplete. Missing required directories:\n"
+            + "\n".join(missing_dirs)
+            + "\nRun preprocessing and feature extraction first, then retry training."
+        )
+        return
     names = (
-        set([name.split(".")[0] for name in os.listdir(gt_wavs_dir)])
-        & set([name.split(".")[0] for name in os.listdir(feature_dir)])
-        & set([name.split(".")[0] for name in os.listdir(f0_dir)])
-        & set([name.split(".")[0] for name in os.listdir(f0nsf_dir)])
+        {name.split(".")[0] for name in os.listdir(gt_wavs_dir)}
+        & {name.split(".")[0] for name in os.listdir(feature_dir)}
+        & {name.split(".")[0] for name in os.listdir(f0_dir)}
+        & {name.split(".")[0] for name in os.listdir(f0nsf_dir)}
     )
+    if not names:
+        yield (
+            "Training data is incomplete. No matching items were found across "
+            "`0_gt_wavs`, `3_feature768`, `2a_f0`, and `2b-f0nsf`."
+        )
+        return
     opt = []
     for name in names:
         opt.append(
             "%s/%s.wav|%s/%s.npy|%s/%s.wav.npy|%s/%s.wav.npy|%s"
             % (
-                gt_wavs_dir.replace("\\", "\\\\"),
+                str(gt_wavs_dir).replace("\\", "\\\\"),
                 name,
-                feature_dir.replace("\\", "\\\\"),
+                str(feature_dir).replace("\\", "\\\\"),
                 name,
-                f0_dir.replace("\\", "\\\\"),
+                str(f0_dir).replace("\\", "\\\\"),
                 name,
-                f0nsf_dir.replace("\\", "\\\\"),
+                str(f0nsf_dir).replace("\\", "\\\\"),
                 name,
                 spk_id5,
             )
@@ -400,7 +421,7 @@ def click_train(
             )
         )
     shuffle(opt)
-    with open("%s/filelist.txt" % exp_dir, "w") as f:
+    with open(exp_dir / "filelist.txt", "w") as f:
         f.write("\n".join(opt))
     logger.debug("Write filelist done")
     logger.info(f"Using GPU setting: {gpus16}")
@@ -409,8 +430,8 @@ def click_train(
     if pretrained_D15 == "":
         logger.info("No pretrained Discriminator")
     config_path = "v2/%s.json" % sr2
-    config_save_path = os.path.join(exp_dir, "config.json")
-    if not pathlib.Path(config_save_path).exists():
+    config_save_path = exp_dir / "config.json"
+    if not config_save_path.exists():
         with open(config_save_path, "w", encoding="utf-8") as f:
             json.dump(
                 shared.config.json_config[config_path],
@@ -456,7 +477,7 @@ def click_train(
     if pretrained_D15 != "":
         cmd.extend(["-pd", pretrained_D15])
     logger.info(f"Execute: {shlex.join(cmd)}")
-    train_log_path = pathlib.Path(exp_dir) / "train.log"
+    train_log_path = exp_dir / "train.log"
     p = subprocess.Popen(cmd, cwd=shared.now_dir, stdout=subprocess.PIPE, text=True)
     if p.stdout is None:
         raise RuntimeError("Training process stdout was not captured")
