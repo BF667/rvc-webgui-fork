@@ -23,6 +23,6 @@ This document provides essential guidelines and context for AI agents working on
   - Prefer `dict[str, int]` over `typing.Dict[str, int]`.
   - Use `list[str]` over `typing.List[str]`.
   - Use the pipe operator `|` for Unions (e.g., `str | None`) instead of `typing.Union` or `typing.Optional`.
-- **TypedDict**: Prefer `TypedDict` for defining the structure of dictionaries.
+- **TypedDict**: Prefer `TypedDict` for defining the structure of dictionaries. Avoid untyped `kargs`.
 - **Forward References**: Use string literals for forward references or rely on modern behavior (Python 3.13 handles most cases gracefully).
 - **Static Analysis**: The codebase aims for high type coverage to support static analysis.
