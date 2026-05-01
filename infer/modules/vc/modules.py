@@ -19,9 +19,7 @@ import numpy as np
 import torch
 from infer.lib.infer_pack.models import (
     SynthesizerTrnMs256NSFsid,
-    SynthesizerTrnMs256NSFsid_nono,
     SynthesizerTrnMs768NSFsid,
-    SynthesizerTrnMs768NSFsid_nono,
 )
 from infer.modules.vc.pipeline import Pipeline
 from infer.modules.vc.utils import *
@@ -62,15 +60,12 @@ class VC:
         self.tgt_sr: int | None = None
         self.net_g: (
             SynthesizerTrnMs256NSFsid
-            | SynthesizerTrnMs256NSFsid_nono
             | SynthesizerTrnMs768NSFsid
-            | SynthesizerTrnMs768NSFsid_nono
             | None
         ) = None
         self.pipeline: Pipeline | None = None
         self.cpt: RvcCheckpoint | None = None
         self.version: str = "UNKNOWN"
-        self.if_f0: int | None = None
         self.hubert_model: HubertModel | None = None
         self.config: Config = config
 
@@ -95,10 +90,8 @@ class VC:
         logger.info(f"Get sid: {sid}")
 
         to_return_protect0 = {
-            "visible": self.if_f0 != 0,
-            "value": (
-                to_return_protect[0] if self.if_f0 != 0 and to_return_protect else 0.5
-            ),
+            "visible": True,
+            "value": (to_return_protect[0] if to_return_protect else 0.5),
             "__type__": "update",
         }
 
@@ -114,28 +107,17 @@ class VC:
                 # You just have to follow this instruction to clear it.
                 cpt = self.cpt
                 if cpt is not None:
-                    self.if_f0 = cpt.get("f0", 1)
                     self.version = cpt.get("version", "v1")
                     if self.version == "v1":
-                        if self.if_f0 == 1:
-                            self.net_g = SynthesizerTrnMs256NSFsid(
-                                *synthesizer_config_args_with_sr(cpt["config"]),
-                                is_half=self.config.is_half,
-                            )
-                        else:
-                            self.net_g = SynthesizerTrnMs256NSFsid_nono(
-                                *synthesizer_config_args(cpt["config"])
-                            )
+                        self.net_g = SynthesizerTrnMs256NSFsid(
+                            *synthesizer_config_args_with_sr(cpt["config"]),
+                            is_half=self.config.is_half,
+                        )
                     elif self.version == "v2":
-                        if self.if_f0 == 1:
-                            self.net_g = SynthesizerTrnMs768NSFsid(
-                                *synthesizer_config_args_with_sr(cpt["config"]),
-                                is_half=self.config.is_half,
-                            )
-                        else:
-                            self.net_g = SynthesizerTrnMs768NSFsid_nono(
-                                *synthesizer_config_args(cpt["config"])
-                            )
+                        self.net_g = SynthesizerTrnMs768NSFsid(
+                            *synthesizer_config_args_with_sr(cpt["config"]),
+                            is_half=self.config.is_half,
+                        )
                 self.net_g = None
                 self.cpt = None
                 if torch.cuda.is_available():
@@ -157,18 +139,15 @@ class VC:
         )
         self.tgt_sr = synthesizer_target_sr(self.cpt["config"])
         self.cpt["config"][-3] = self.cpt["weight"]["emb_g.weight"].shape[0]  # n_spk
-        self.if_f0 = self.cpt.get("f0", 1)
         self.version = self.cpt.get("version", "v1")
 
         synthesizer_class = {
-            ("v1", 1): SynthesizerTrnMs256NSFsid,
-            ("v1", 0): SynthesizerTrnMs256NSFsid_nono,
-            ("v2", 1): SynthesizerTrnMs768NSFsid,
-            ("v2", 0): SynthesizerTrnMs768NSFsid_nono,
+            "v1": SynthesizerTrnMs256NSFsid,
+            "v2": SynthesizerTrnMs768NSFsid,
         }
 
         self.net_g = synthesizer_class.get(
-            (self.version, self.if_f0), SynthesizerTrnMs256NSFsid
+            self.version, SynthesizerTrnMs256NSFsid
         )(
             *synthesizer_config_args_with_sr(self.cpt["config"]),
             is_half=self.config.is_half,
@@ -224,9 +203,6 @@ class VC:
         f0_file = None
         sid = 0
         filter_radius = 3
-        if_f0 = self.if_f0
-        if if_f0 is None:
-            return "Model F0 setting unknown. Please reload the model.", None
         tgt_sr = self.tgt_sr
         if tgt_sr is None:
             return "Model target sample rate unknown. Please reload the model.", None
@@ -259,7 +235,6 @@ class VC:
                 f0_method=f0_method,
                 file_index=file_index,
                 index_rate=index_rate,
-                if_f0=if_f0,
                 # filter_radius=filter_radius,
                 tgt_sr=tgt_sr,
                 resample_sr=resample_sr,

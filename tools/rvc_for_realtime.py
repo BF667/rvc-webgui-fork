@@ -19,9 +19,7 @@ from torch.serialization import safe_globals
 
 from infer.lib.infer_pack.models import (
     SynthesizerTrnMs256NSFsid,
-    SynthesizerTrnMs256NSFsid_nono,
     SynthesizerTrnMs768NSFsid,
-    SynthesizerTrnMs768NSFsid_nono,
 )
 from lib.f0 import ALL_PITCH_METHODS, Generator, PitchMethod
 
@@ -284,27 +282,24 @@ class RVC:
             printt("Index search FAILED")
         t3 = ttime()
         p_len = input_wav.shape[0] // 160
-        cache_pitch: torch.Tensor | None = None
-        cache_pitchf: torch.Tensor | None = None
-        if self.if_f0 == 1:
-            if f0method not in ALL_PITCH_METHODS:
-                raise ValueError(f"Unsupported f0 method: {f0method}")
-            method = cast(PitchMethod, f0method)
-            f0_extractor_frame = block_frame_16k + 800
-            if method == "rmvpe":
-                f0_extractor_frame = 5120 * ((f0_extractor_frame - 1) // 5120 + 1) - 160
-            pitch, pitchf = self._get_f0(
-                input_wav[-f0_extractor_frame:],
-                self.f0_up_key,
-                method,
-            )
-            shift = block_frame_16k // 160
-            self.cache_pitch[:-shift] = self.cache_pitch[shift:].clone()
-            self.cache_pitchf[:-shift] = self.cache_pitchf[shift:].clone()
-            self.cache_pitch[4 - pitch.shape[0] :] = pitch[3:-1]
-            self.cache_pitchf[4 - pitch.shape[0] :] = pitchf[3:-1]
-            cache_pitch = self.cache_pitch[None, -p_len:]
-            cache_pitchf = self.cache_pitchf[None, -p_len:]
+        if f0method not in ALL_PITCH_METHODS:
+            raise ValueError(f"Unsupported f0 method: {f0method}")
+        method = cast(PitchMethod, f0method)
+        f0_extractor_frame = block_frame_16k + 800
+        if method == "rmvpe":
+            f0_extractor_frame = 5120 * ((f0_extractor_frame - 1) // 5120 + 1) - 160
+        pitch, pitchf = self._get_f0(
+            input_wav[-f0_extractor_frame:],
+            self.f0_up_key,
+            method,
+        )
+        shift = block_frame_16k // 160
+        self.cache_pitch[:-shift] = self.cache_pitch[shift:].clone()
+        self.cache_pitchf[:-shift] = self.cache_pitchf[shift:].clone()
+        self.cache_pitch[4 - pitch.shape[0] :] = pitch[3:-1]
+        self.cache_pitchf[4 - pitch.shape[0] :] = pitchf[3:-1]
+        cache_pitch: torch.Tensor = self.cache_pitch[None, -p_len:]
+        cache_pitchf: torch.Tensor = self.cache_pitchf[None, -p_len:]
         t4 = ttime()
         feats = F.interpolate(feats.permute(0, 2, 1), scale_factor=2).permute(0, 2, 1)
         feats = feats[:, :p_len, :]
@@ -314,22 +309,17 @@ class RVC:
         return_length_t = torch.LongTensor([return_length])
         net_g = cast(InferModule, self.net_g)
         with torch.no_grad():
-            if self.if_f0 == 1:
-                if cache_pitch is None or cache_pitchf is None:
-                    raise RuntimeError("Pitch cache was not initialized")
-                infered_audio, _, _ = net_g.infer(
-                    feats,
-                    p_len_t,
-                    cache_pitch,
-                    cache_pitchf,
-                    sid,
-                    skip_head_t,
-                    return_length_t,
-                )
-            else:
-                infered_audio, _, _ = net_g.infer(
-                    feats, p_len_t, sid, skip_head_t, return_length_t
-                )
+            if cache_pitch is None or cache_pitchf is None:
+                raise RuntimeError("Pitch cache was not initialized")
+            infered_audio, _, _ = net_g.infer(
+                feats,
+                p_len_t,
+                cache_pitch,
+                cache_pitchf,
+                sid,
+                skip_head_t,
+                return_length_t,
+            )
         t5 = ttime()
         printt(
             "Spent time: fea = %.3fs, index = %.3fs, f0 = %.3fs, model = %.3fs",

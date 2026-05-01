@@ -8,9 +8,7 @@ from typing import Protocol, TypeAlias
 from configs.config import Config
 from infer.lib.infer_pack.models import (
     SynthesizerTrnMs256NSFsid,
-    SynthesizerTrnMs256NSFsid_nono,
     SynthesizerTrnMs768NSFsid,
-    SynthesizerTrnMs768NSFsid_nono,
 )
 
 import gradio as gr
@@ -42,9 +40,7 @@ class NamedFile(Protocol):
 
 RVCModel: TypeAlias = (
     SynthesizerTrnMs256NSFsid
-    | SynthesizerTrnMs256NSFsid_nono
     | SynthesizerTrnMs768NSFsid
-    | SynthesizerTrnMs768NSFsid_nono
 )
 
 
@@ -237,7 +233,6 @@ class Pipeline:
         f0_method: PitchMethod,
         file_index: str,
         index_rate: float,
-        if_f0: int,
         # filter_radius: int,
         tgt_sr: int,
         resample_sr: int,
@@ -304,24 +299,21 @@ class Pipeline:
             except:
                 traceback.print_exc()
         sid_tensor = torch.tensor(sid, device=self.device).unsqueeze(0).long()
-        pitch: torch.Tensor | None = None
-        pitchf: torch.Tensor | None = None
-        if if_f0 == 1:
-            progress(0.2, desc="Extracting F0...")  # Progress update
-            pitch_np, pitchf_np = self.get_f0(
-                # input_audio_path,
-                x=audio_pad,
-                p_len=p_len,
-                f0_up_key=f0_up_key,
-                f0_method=f0_method,
-                # filter_radius=filter_radius,
-                inp_f0=inp_f0,
-            )
-            pitch_np = pitch_np[:p_len]
-            pitchf_np = pitchf_np[:p_len]
-            pitchf_np = pitchf_np.astype(np.float32)
-            pitch = torch.tensor(pitch_np, device=self.device).unsqueeze(0).long()
-            pitchf = torch.tensor(pitchf_np, device=self.device).unsqueeze(0).float()
+        progress(0.2, desc="Extracting F0...")  # Progress update
+        pitch_np, pitchf_np = self.get_f0(
+            # input_audio_path,
+            x=audio_pad,
+            p_len=p_len,
+            f0_up_key=f0_up_key,
+            f0_method=f0_method,
+            # filter_radius=filter_radius,
+            inp_f0=inp_f0,
+        )
+        pitch_np = pitch_np[:p_len]
+        pitchf_np = pitchf_np[:p_len]
+        pitchf_np = pitchf_np.astype(np.float32)
+        pitch: torch.Tensor = torch.tensor(pitch_np, device=self.device).unsqueeze(0).long()
+        pitchf: torch.Tensor = torch.tensor(pitchf_np, device=self.device).unsqueeze(0).float()
         t2 = ttime()
         times[1] += t2 - t1
 
@@ -333,59 +325,14 @@ class Pipeline:
                 desc=f"Converting segment {i+1}/{total_segments}...",
             )  # Progress update
             t = t // self.window * self.window
-            if if_f0 == 1:
-                assert pitch is not None
-                assert pitchf is not None
-                audio_segments.append(
-                    self.vc(
-                        model,
-                        net_g,
-                        sid_tensor,
-                        audio_pad[s : t + self.t_pad2 + self.window],
-                        pitch[:, s // self.window : (t + self.t_pad2) // self.window],
-                        pitchf[:, s // self.window : (t + self.t_pad2) // self.window],
-                        times,
-                        index,
-                        big_npy,
-                        index_rate,
-                        version,
-                        protect,
-                    )[self.t_pad_tgt : -self.t_pad_tgt]
-                )
-            else:
-                audio_segments.append(
-                    self.vc(
-                        model,
-                        net_g,
-                        sid_tensor,
-                        audio_pad[s : t + self.t_pad2 + self.window],
-                        None,
-                        None,
-                        times,
-                        index,
-                        big_npy,
-                        index_rate,
-                        version,
-                        protect,
-                    )[self.t_pad_tgt : -self.t_pad_tgt]
-                )
-            s = t
-
-        progress(
-            0.95, desc="Finalizing conversion..."
-        )  # Progress update before last segment
-
-        if if_f0 == 1:
-            assert pitch is not None
-            assert pitchf is not None
             audio_segments.append(
                 self.vc(
                     model,
                     net_g,
                     sid_tensor,
-                    audio_pad[t:],
-                    pitch[:, t // self.window :] if t is not None else pitch,
-                    pitchf[:, t // self.window :] if t is not None else pitchf,
+                    audio_pad[s : t + self.t_pad2 + self.window],
+                    pitch[:, s // self.window : (t + self.t_pad2) // self.window],
+                    pitchf[:, s // self.window : (t + self.t_pad2) // self.window],
                     times,
                     index,
                     big_npy,
@@ -394,23 +341,28 @@ class Pipeline:
                     protect,
                 )[self.t_pad_tgt : -self.t_pad_tgt]
             )
-        else:
-            audio_segments.append(
-                self.vc(
-                    model=model,
-                    net_g=net_g,
-                    sid=sid_tensor,
-                    audio=audio_pad[t:],
-                    pitch=None,
-                    pitchf=None,
-                    times=times,
-                    index=index,
-                    big_npy=big_npy,
-                    index_rate=index_rate,
-                    version=version,
-                    protect=protect,
-                )[self.t_pad_tgt : -self.t_pad_tgt]
-            )
+            s = t
+
+        progress(
+            0.95, desc="Finalizing conversion..."
+        )  # Progress update before last segment
+
+        audio_segments.append(
+            self.vc(
+                model,
+                net_g,
+                sid_tensor,
+                audio_pad[t:],
+                pitch[:, t // self.window :] if t is not None else pitch,
+                pitchf[:, t // self.window :] if t is not None else pitchf,
+                times,
+                index,
+                big_npy,
+                index_rate,
+                version,
+                protect,
+            )[self.t_pad_tgt : -self.t_pad_tgt]
+        )
         audio_opt = np.concatenate(audio_segments)
         if rms_mix_rate != 1:
             audio_opt = change_rms(audio, 16000, audio_opt, tgt_sr, rms_mix_rate)

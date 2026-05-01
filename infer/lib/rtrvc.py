@@ -103,7 +103,6 @@ class RVC:
             self.net_g, cpt = load_synthesizer(self.pth_path, self.device)
             self.tgt_sr = synthesizer_target_sr(cpt["config"])
             cpt["config"][-3] = cpt["weight"]["emb_g.weight"].shape[0]
-            self.if_f0 = cpt.get("f0", 1)
             self.version = cpt.get("version", "v1")
             if self.is_half:
                 try:
@@ -129,7 +128,6 @@ class RVC:
             )
 
             self.tgt_sr = cpt["config"][-1]
-            self.if_f0 = cpt.get("f0", 1)
             self.version = cpt.get("version", "v1")
             self.net_g = torch.jit.load(BytesIO(cpt["model"]), map_location=self.device)
             self.net_g.infer = self.net_g.forward
@@ -186,7 +184,7 @@ class RVC:
                 self.hubert.final_proj(logits[0]) if self.version == "v1" else logits[0]
             )
             feats = torch.cat((feats, feats[:, -1:, :]), 1)
-            if protect < 0.5 and self.if_f0 == 1:
+            if protect < 0.5:
                 feats0 = feats.clone()
 
         try:
@@ -220,7 +218,7 @@ class RVC:
             pitch, pitchf = f0method
             pitch = torch.tensor(pitch, device=self.device).unsqueeze(0).long()
             pitchf = torch.tensor(pitchf, device=self.device).unsqueeze(0).float()
-        elif self.if_f0 == 1:
+        else:
             if f0method not in ALL_PITCH_METHODS:
                 raise ValueError(f"Unsupported f0 method: {f0method}")
             method = cast(PitchMethod, f0method)
