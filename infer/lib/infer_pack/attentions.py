@@ -58,7 +58,7 @@ class Encoder(nn.Module):
             )
             self.norm_layers_2.append(LayerNorm(hidden_channels))
 
-    def forward(self, x, x_mask):
+    def forward(self, x: torch.Tensor, x_mask: torch.Tensor) -> torch.Tensor:
         attn_mask = x_mask.unsqueeze(2) * x_mask.unsqueeze(-1)
         x = x * x_mask
         zippep = zip(
@@ -136,7 +136,13 @@ class Decoder(nn.Module):
             )
             self.norm_layers_2.append(LayerNorm(hidden_channels))
 
-    def forward(self, x, x_mask, h, h_mask):
+    def forward(
+        self,
+        x: torch.Tensor,
+        x_mask: torch.Tensor,
+        h: torch.Tensor,
+        h_mask: torch.Tensor,
+    ) -> torch.Tensor:
         """
         x: decoder input
         h: encoder output
@@ -288,7 +294,9 @@ class MultiHeadAttention(nn.Module):
         )  # [b, n_h, t_t, d_k] -> [b, d, t_t]
         return output, p_attn
 
-    def _matmul_with_relative_values(self, x: torch.Tensor, y: torch.Tensor):
+    def _matmul_with_relative_values(
+        self, x: torch.Tensor, y: torch.Tensor
+    ) -> torch.Tensor:
         """
         x: [b, h, l, m]
         y: [h or 1, m, d]
@@ -297,7 +305,9 @@ class MultiHeadAttention(nn.Module):
         ret = torch.matmul(x, y.unsqueeze(0))
         return ret
 
-    def _matmul_with_relative_keys(self, x: torch.Tensor, y: torch.Tensor):
+    def _matmul_with_relative_keys(
+        self, x: torch.Tensor, y: torch.Tensor
+    ) -> torch.Tensor:
         """
         x: [b, h, l, d]
         y: [h or 1, m, d]
@@ -329,7 +339,7 @@ class MultiHeadAttention(nn.Module):
         ]
         return used_relative_embeddings
 
-    def _relative_position_to_absolute_position(self, x: torch.Tensor):
+    def _relative_position_to_absolute_position(self, x: torch.Tensor) -> torch.Tensor:
         """
         x: [b, h, l, 2*l-1]
         ret: [b, h, l, l]
@@ -356,7 +366,7 @@ class MultiHeadAttention(nn.Module):
         ]
         return x_final
 
-    def _absolute_position_to_relative_position(self, x):
+    def _absolute_position_to_relative_position(self, x: torch.Tensor) -> torch.Tensor:
         """
         x: [b, h, l, l]
         ret: [b, h, l, 2*l-1]
@@ -378,7 +388,7 @@ class MultiHeadAttention(nn.Module):
         x_final = x_flat.view([batch, heads, length, 2 * length])[:, :, :, 1:]
         return x_final
 
-    def _attention_bias_proximal(self, length: int):
+    def _attention_bias_proximal(self, length: int) -> torch.Tensor:
         """Bias for self-attention to encourage attention to close positions.
         Args:
           length: an integer scalar.
@@ -426,7 +436,7 @@ class FFN(nn.Module):
             padding = self._same_padding(x * x_mask)
         return padding
 
-    def forward(self, x: torch.Tensor, x_mask: torch.Tensor):
+    def forward(self, x: torch.Tensor, x_mask: torch.Tensor) -> torch.Tensor:
         x = self.conv_1(self.padding(x, x_mask))
         if self.is_activation:
             x = x * torch.sigmoid(1.702 * x)
@@ -437,7 +447,7 @@ class FFN(nn.Module):
         x = self.conv_2(self.padding(x, x_mask))
         return x * x_mask
 
-    def _causal_padding(self, x: torch.Tensor):
+    def _causal_padding(self, x: torch.Tensor) -> torch.Tensor:
         if self.kernel_size == 1:
             return x
         pad_l: int = self.kernel_size - 1
@@ -450,7 +460,7 @@ class FFN(nn.Module):
         )
         return x
 
-    def _same_padding(self, x: torch.Tensor):
+    def _same_padding(self, x: torch.Tensor) -> torch.Tensor:
         if self.kernel_size == 1:
             return x
         pad_l: int = (self.kernel_size - 1) // 2
