@@ -1,8 +1,9 @@
-import os
-import json
 import traceback
 from pathlib import Path
 import gradio as gr
+from pydantic import ValidationError
+
+from lib.json_validation import JsonLogPayload
 from shared import i18n
 from infer.lib.train.process_ckpt import (
     change_info,
@@ -20,11 +21,12 @@ def change_info_(ckpt_path):
     try:
         with open(train_log, "r") as f:
             first_line = next((line for line in f.read().splitlines() if line.strip()), "")
-            payload = json.loads(first_line)
-            info = payload["record"]["extra"]["hparams"]
-            sr = info["sample_rate"]
+            payload = JsonLogPayload.model_validate_json(first_line)
+            sr = payload.record.extra.hparams.sample_rate
+            if sr is None:
+                raise ValueError("Missing sample_rate in train.log hparams")
             return sr, "1", "v2"
-    except Exception:
+    except (ValueError, ValidationError):
         traceback.print_exc()
         return {"__type__": "update"}, {"__type__": "update"}, {"__type__": "update"}
 

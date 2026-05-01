@@ -5,14 +5,17 @@ import sys
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
+from pydantic import BaseModel
 from scipy.io.wavfile import read
 from tap import Tap
 from loguru import logger
+
+from lib.json_validation import TrainingConfig
 
 # MATPLOTLIB_FLAG = False
 
@@ -333,9 +336,9 @@ def get_hparams(init=True):
 
     config_save_path = experiment_dir / "config.json"
     with open(config_save_path, "r") as f:
-        config = json.load(f)
+        config = TrainingConfig.model_validate(json.load(f))
 
-    hparams = HParams(**config)
+    hparams = HParams.from_training_config(config)
     hparams.model_dir = experiment_dir
     hparams.experiment_dir = experiment_dir
     hparams.save_every_epoch = args.save_every_epoch
@@ -359,9 +362,9 @@ def get_hparams_from_dir(model_dir: Path):
     config_save_path = model_dir / "config.json"
     with open(config_save_path, "r") as f:
         data = f.read()
-    config = json.loads(data)
+    config = TrainingConfig.model_validate_json(data)
 
-    hparams = HParams(**config)
+    hparams = HParams.from_training_config(config)
     hparams.model_dir = model_dir
     return hparams
 
@@ -369,9 +372,9 @@ def get_hparams_from_dir(model_dir: Path):
 def get_hparams_from_file(config_path: Path):
     with open(config_path, "r") as f:
         data = f.read()
-    config = json.loads(data)
+    config = TrainingConfig.model_validate_json(data)
 
-    hparams = HParams(**config)
+    hparams = HParams.from_training_config(config)
     return hparams
 
 
@@ -434,7 +437,7 @@ def get_logger(model_dir: Path, filename: str = "train.log", *, stdout: bool = F
     return logger
 
 
-def hparams_to_dict(value: Any) -> Any:
+def hparams_to_dict(value: object) -> object:
     if isinstance(value, HParams):
         return {key: hparams_to_dict(item) for key, item in value.items()}
     if isinstance(value, dict):
@@ -464,11 +467,22 @@ class HParams:
     data: "HParams"
     training_files: Path
 
-    def __init__(self, **kwargs: object) -> None:
-        for k, v in kwargs.items():
-            if isinstance(v, dict):
-                v = HParams(**v)
-            self[k] = v
+    def __init__(self) -> None:
+        pass
+
+    @classmethod
+    def from_training_config(cls, config: TrainingConfig) -> "HParams":
+        return cls.from_pydantic_model(config)
+
+    @classmethod
+    def from_pydantic_model(cls, model: BaseModel) -> "HParams":
+        hparams = cls()
+        for field_name in type(model).model_fields:
+            value = getattr(model, field_name)
+            if isinstance(value, BaseModel):
+                value = cls.from_pydantic_model(value)
+            hparams[field_name] = value
+        return hparams
 
     def keys(self):
         return self.__dict__.keys()

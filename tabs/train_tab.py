@@ -10,23 +10,25 @@ import traceback
 from random import shuffle
 from collections.abc import Generator
 from time import sleep
-from typing import Literal, Any
+from typing import Literal
 
 import faiss
 import gradio as gr
 import numpy as np
 from loguru import logger
+from pydantic import ValidationError
 from sklearn.cluster import MiniBatchKMeans
 
 import shared
+from lib.json_validation import JsonLogPayload, LogEventName, ModelVersion, SampleRateName
 from shared import i18n
 
 ProgressComponent = gr.Progress
 
 F0GPUVisible = True
-SampleRate = Literal["32k", "48k"]
+SampleRate = SampleRateName
 PitchExtractionMethod = Literal["pm", "harvest", "dio", "rmvpe", "rmvpe_gpu"]
-MODEL_VERSION = "v2"
+MODEL_VERSION: ModelVersion = "v2"
 
 
 def change_f0_method(f0method8: PitchExtractionMethod) -> dict[str, object]:
@@ -37,82 +39,49 @@ def change_f0_method(f0method8: PitchExtractionMethod) -> dict[str, object]:
     return {"visible": visible, "__type__": "update"}
 
 
-def read_json_log_records(log_path: pathlib.Path) -> list[dict[str, Any]]:
+def read_json_log_records(log_path: pathlib.Path) -> list[JsonLogPayload]:
     if not log_path.exists():
         return []
-    records: list[dict[str, Any]] = []
+    records: list[JsonLogPayload] = []
     for line in log_path.read_text(encoding="utf-8", errors="ignore").splitlines():
         try:
-            payload = json.loads(line)
-        except json.JSONDecodeError:
+            payload = JsonLogPayload.model_validate_json(line)
+        except ValidationError:
             continue
-        if isinstance(payload, dict):
-            records.append(payload)
+        records.append(payload)
     return records
 
 
-def get_log_record(payload: dict[str, Any]) -> dict[str, Any]:
-    record = payload.get("record")
-    return record if isinstance(record, dict) else {}
-
-
-def get_log_extra(payload: dict[str, Any]) -> dict[str, Any]:
-    extra = get_log_record(payload).get("extra")
-    return extra if isinstance(extra, dict) else {}
-
-
-def get_log_message(payload: dict[str, Any]) -> str:
-    message = get_log_record(payload).get("message")
-    return message if isinstance(message, str) else ""
-
-
-def format_log_messages(records: list[dict[str, Any]]) -> str:
-    return "\n".join(
-        message for message in (get_log_message(record) for record in records) if message
-    )
+def format_log_messages(records: list[JsonLogPayload]) -> str:
+    return "\n".join(record.record.message for record in records if record.record.message)
 
 
 def get_latest_event(
-    records: list[dict[str, Any]], event_name: str
-) -> dict[str, Any] | None:
+    records: list[JsonLogPayload], event_name: LogEventName
+) -> JsonLogPayload | None:
     for record in reversed(records):
-        if get_log_extra(record).get("event") == event_name:
+        if record.record.extra.event == event_name:
             return record
     return None
 
 
-def parse_json_log_line(line: str) -> dict[str, Any] | None:
+def parse_json_log_line(line: str) -> JsonLogPayload | None:
     try:
-        payload = json.loads(line)
-    except json.JSONDecodeError:
+        return JsonLogPayload.model_validate_json(line)
+    except ValidationError:
         return None
-    return payload if isinstance(payload, dict) else None
 
 
-def parse_int(value: Any, default: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def parse_float(value: Any, default: float) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def get_latest_ui_progress(records: list[dict[str, Any]]) -> tuple[float, str]:
+def get_latest_ui_progress(records: list[JsonLogPayload]) -> tuple[float, str]:
     latest = get_latest_event(records, "ui_progress")
     if latest is None:
         return 0.0, "Starting..."
-    extra = get_log_extra(latest)
-    fraction = parse_float(extra.get("fraction"), 0.0)
-    message = extra.get("message")
-    if isinstance(message, str) and message:
+    extra = latest.record.extra
+    fraction = extra.fraction
+    message = extra.message
+    if message:
         return fraction, message
-    stage = extra.get("stage")
+    stage = extra.stage
     return fraction, str(stage) if stage is not None else "Working..."
 
 
@@ -429,7 +398,7 @@ def click_train(
     if not config_save_path.exists():
         with open(config_save_path, "w", encoding="utf-8") as f:
             json.dump(
-                shared.config.json_config[config_path],
+                shared.config.json_config[config_path].model_dump(mode="json"),
                 f,
                 ensure_ascii=False,
                 indent=4,
@@ -483,11 +452,11 @@ def click_train(
         payload = parse_json_log_line(line)
         if payload is None:
             continue
-        extra = get_log_extra(payload)
-        event = extra.get("event")
+        extra = payload.record.extra
+        event = extra.event
         if event == "ui_progress":
-            fraction = parse_float(extra.get("fraction"), 0.0)
-            description = str(extra.get("message", "Training..."))
+            fraction = extra.fraction
+            description = extra.message or "Training..."
             progress(fraction, desc=description)
 
     return_code = p.wait()

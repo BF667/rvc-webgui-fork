@@ -4,15 +4,18 @@ import json
 import shutil
 from multiprocessing import cpu_count
 from functools import wraps
-from typing import TypeVar, TypedDict, cast
+from typing import Literal, TypeAlias, TypeVar, cast
 
 from tap import Tap
 from loguru import logger
 
 from lib.accelerate_utils import get_accelerator, use_half_precision
+from lib.json_validation import TrainingConfig
 
 
-version_config_list: list[str] = [
+VersionConfigPath: TypeAlias = Literal["v2/48k.json", "v2/32k.json"]
+
+version_config_list: list[VersionConfigPath] = [
     "v2/48k.json",
     "v2/32k.json",
 ]
@@ -20,8 +23,7 @@ version_config_list: list[str] = [
 T = TypeVar("T")
 
 
-class VersionConfig(TypedDict, total=False):
-    pass
+VersionConfig = TrainingConfig
 
 
 class ConfigArgs(Tap):
@@ -50,7 +52,7 @@ def singleton_class(cls: type[T]) -> type[T]:
     return cast(type[T], wrapper)
 
 
-# def singleton_variable(func: Callable[..., Any]) -> Callable[..., Any]:
+# def singleton_variable(func):
 #     def wrapper(*args, **kwargs):
 #         if not wrapper.instance:
 #             wrapper.instance = func(*args, **kwargs)
@@ -107,7 +109,7 @@ class Config:
             if not os.path.exists(p):
                 shutil.copy(f"configs/{config_file}", p)
             with open(f"configs/inuse/{config_file}", "r") as f:
-                d[config_file] = cast(VersionConfig, json.load(f))
+                d[config_file] = TrainingConfig.model_validate(json.load(f))
         return d
 
     @staticmethod

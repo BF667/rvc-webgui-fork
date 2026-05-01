@@ -3,7 +3,7 @@ import sys
 import traceback
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Literal, Protocol, cast
 
 import torch
 
@@ -18,6 +18,34 @@ type SampleRate = Literal["32k", "48k"]
 type ModelVersion = Literal["v2"]
 
 
+class HParamsData(Protocol):
+    filter_length: int
+    sampling_rate: int
+
+
+class HParamsModel(Protocol):
+    inter_channels: int
+    hidden_channels: int
+    filter_channels: int
+    n_heads: int
+    n_layers: int
+    kernel_size: int
+    p_dropout: float
+    resblock: str
+    resblock_kernel_sizes: list[int]
+    resblock_dilation_sizes: list[list[int]]
+    upsample_rates: list[int]
+    upsample_initial_channel: int
+    upsample_kernel_sizes: list[int]
+    spk_embed_dim: int
+    gin_channels: int
+
+
+class SaveHParams(Protocol):
+    data: HParamsData
+    model: HParamsModel
+
+
 def savee(
     ckpt: WeightMap,
     sr: SampleRate,
@@ -25,7 +53,7 @@ def savee(
     name: str,
     epoch: int,
     version: ModelVersion,
-    hps: Any,
+    hps: SaveHParams,
 ) -> str:
     if int(if_f0) != 1 or version != "v2":
         return "Only v2 models with f0 are supported."
@@ -187,8 +215,9 @@ def merge(
         return "Only v2 models with f0 are supported."
     try:
 
-        def extract(ckpt: dict[str, Any]) -> CheckpointDict:
+        def extract(ckpt: dict[str, object]) -> CheckpointDict:
             a = ckpt["model"]
+            a = cast(WeightMap, a)
             weights: WeightMap = {}
             for key in a.keys():
                 if "enc_q" in key:

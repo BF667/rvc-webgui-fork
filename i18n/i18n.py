@@ -2,16 +2,18 @@ import json
 import locale
 import os
 
+from lib.json_validation import LocaleMap
 
-def load_language_list(language: str) -> dict[str, str]:
-    with open(f"./i18n/locale/{language}.json", "r", encoding="utf-8") as f:
-        language_list = json.load(f)
-    return language_list
+
+def load_language_list(language: str) -> LocaleMap:
+    path = f"./i18n/locale/{language}.json"
+    with open(path, "r", encoding="utf-8") as f:
+        return LocaleMap.model_validate(json.load(f))
 
 
 class I18nAuto:
     language: str
-    language_map: dict[str, str]
+    language_map: LocaleMap
 
     def __init__(self, language: str | None = None) -> None:
         if language in ["Auto", None]:

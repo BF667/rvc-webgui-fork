@@ -3,6 +3,8 @@ import glob
 import json
 from collections import OrderedDict
 
+from lib.json_validation import LocaleMap
+
 
 def extract_i18n_strings(node: ast.AST) -> list[str]:
     i18n_strings: list[str] = []
@@ -51,7 +53,7 @@ print("Total unique:", len(code_keys))
 
 standard_file = "i18n/locale/zh_CN.json"
 with open(standard_file, "r", encoding="utf-8") as f:
-    standard_data = json.load(f, object_pairs_hook=OrderedDict)
+    standard_data = LocaleMap.model_validate(json.load(f)).root
 standard_keys = set(standard_data.keys())
 
 # Define the standard file name

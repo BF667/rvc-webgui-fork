@@ -1,27 +1,30 @@
 import json
 import os
 from collections import OrderedDict
+from pathlib import Path
+
+from lib.json_validation import LocaleMap
 
 # Define the standard file name
-standard_file = "locale/zh_CN.json"
+locale_dir = Path(__file__).resolve().parent / "locale"
+standard_file = locale_dir / "zh_CN.json"
 
 # Find all JSON files in the directory
-dir_path = "locale/"
 languages = [
-    os.path.join(dir_path, f)
-    for f in os.listdir(dir_path)
-    if f.endswith(".json") and f != standard_file
+    locale_dir / f
+    for f in os.listdir(locale_dir)
+    if f.endswith(".json") and locale_dir / f != standard_file
 ]
 
 # Load the standard file
 with open(standard_file, "r", encoding="utf-8") as f:
-    standard_data = json.load(f, object_pairs_hook=OrderedDict)
+    standard_data = LocaleMap.model_validate(json.load(f)).root
 
 # Loop through each language file
 for lang_file in languages:
     # Load the language file
     with open(lang_file, "r", encoding="utf-8") as f:
-        lang_data = json.load(f, object_pairs_hook=OrderedDict)
+        lang_data = LocaleMap.model_validate(json.load(f)).root
 
     # Find the difference between the language file and the standard file
     diff = set(standard_data.keys()) - set(lang_data.keys())
