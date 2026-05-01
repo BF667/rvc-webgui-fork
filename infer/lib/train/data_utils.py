@@ -98,8 +98,8 @@ class TextAudioLoaderMultiNSFsid(torch.utils.data.Dataset):
         pitchf_t = torch.FloatTensor(pitchf_np)
         return phone_t, pitch_t, pitchf_t
 
-    def get_audio(self, filename: str | Path) -> tuple[torch.Tensor, torch.Tensor]:
-        audio, sampling_rate = load_wav_to_torch(Path(filename))
+    def get_audio(self, filename: Path) -> tuple[torch.Tensor, torch.Tensor]:
+        audio, sampling_rate = load_wav_to_torch(filename)
         if sampling_rate != self.sampling_rate:
             raise ValueError(
                 "{} SR doesn't match target {} SR".format(
@@ -111,7 +111,7 @@ class TextAudioLoaderMultiNSFsid(torch.utils.data.Dataset):
         #        audio_norm = audio / np.abs(audio).max()
 
         audio_norm = audio_norm.unsqueeze(0)
-        spec_path = Path(filename).with_suffix(".spec.pt")
+        spec_path = filename.with_suffix(".spec.pt")
         if spec_path.exists():
             try:
                 spec = torch.load(spec_path, weights_only=False)
@@ -290,8 +290,8 @@ class TextAudioLoader(torch.utils.data.Dataset):
         phone_t = torch.FloatTensor(phone_np)
         return phone_t
 
-    def get_audio(self, filename: str | Path) -> tuple[torch.Tensor, torch.Tensor]:
-        audio, sampling_rate = load_wav_to_torch(Path(filename))
+    def get_audio(self, filename: Path) -> tuple[torch.Tensor, torch.Tensor]:
+        audio, sampling_rate = load_wav_to_torch(filename)
         if sampling_rate != self.sampling_rate:
             raise ValueError(
                 "{} SR doesn't match target {} SR".format(
@@ -303,7 +303,7 @@ class TextAudioLoader(torch.utils.data.Dataset):
         #        audio_norm = audio / np.abs(audio).max()
 
         audio_norm = audio_norm.unsqueeze(0)
-        spec_path = Path(filename).with_suffix(".spec.pt")
+        spec_path = filename.with_suffix(".spec.pt")
         if spec_path.exists():
             try:
                 spec = torch.load(spec_path, weights_only=False)
