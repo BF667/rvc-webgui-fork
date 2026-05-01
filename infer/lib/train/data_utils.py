@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 import numpy as np
 import torch
 import torch.utils.data
+from typing import Any, Iterator
 
 from infer.lib.train.mel_processing import spectrogram_torch
 from infer.lib.train.utils import load_filepaths_and_text, load_wav_to_torch
@@ -20,7 +21,7 @@ class TextAudioLoaderMultiNSFsid(torch.utils.data.Dataset):
     3) computes spectrograms from audio files.
     """
 
-    def __init__(self, audiopaths_and_text, hparams):
+    def __init__(self, audiopaths_and_text: Path, hparams: Any) -> None:
         self.audiopaths_and_text = load_filepaths_and_text(audiopaths_and_text)
         self.max_wav_value = hparams.max_wav_value
         self.sampling_rate = hparams.sampling_rate
@@ -52,7 +53,14 @@ class TextAudioLoaderMultiNSFsid(torch.utils.data.Dataset):
         sid_tensor = torch.LongTensor([int(sid)])
         return sid_tensor
 
-    def get_audio_text_pair(self, audiopath_and_text: list) -> tuple:
+    def get_audio_text_pair(self, audiopath_and_text: list[Any]) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
         # separate filename and text
         file = audiopath_and_text[0]
         phone = audiopath_and_text[1]
@@ -140,7 +148,14 @@ class TextAudioLoaderMultiNSFsid(torch.utils.data.Dataset):
             torch.save(spec, spec_path, _use_new_zipfile_serialization=False)
         return spec, audio_norm
 
-    def __getitem__(self, index: int) -> tuple:
+    def __getitem__(self, index: int) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
         return self.get_audio_text_pair(self.audiopaths_and_text[index])
 
     def __len__(self) -> int:
@@ -153,7 +168,29 @@ class TextAudioCollateMultiNSFsid:
     def __init__(self, return_ids: bool = False):
         self.return_ids = return_ids
 
-    def __call__(self, batch):
+    def __call__(
+        self,
+        batch: list[
+            tuple[
+                torch.Tensor,
+                torch.Tensor,
+                torch.Tensor,
+                torch.Tensor,
+                torch.Tensor,
+                torch.Tensor,
+            ]
+        ],
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
         """Collate's training batch from normalized text and aduio
         PARAMS
         ------
@@ -230,7 +267,7 @@ class TextAudioLoader(torch.utils.data.Dataset):
     3) computes spectrograms from audio files.
     """
 
-    def __init__(self, audiopaths_and_text, hparams):
+    def __init__(self, audiopaths_and_text: Path, hparams: Any) -> None:
         self.audiopaths_and_text = load_filepaths_and_text(audiopaths_and_text)
         self.max_wav_value = hparams.max_wav_value
         self.sampling_rate = hparams.sampling_rate
@@ -262,7 +299,9 @@ class TextAudioLoader(torch.utils.data.Dataset):
         sid_tensor = torch.LongTensor([int(sid)])
         return sid_tensor
 
-    def get_audio_text_pair(self, audiopath_and_text: list) -> tuple:
+    def get_audio_text_pair(
+        self, audiopath_and_text: list[Any]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         # separate filename and text
         file = audiopath_and_text[0]
         phone = audiopath_and_text[1]
@@ -332,7 +371,7 @@ class TextAudioLoader(torch.utils.data.Dataset):
             torch.save(spec, spec_path, _use_new_zipfile_serialization=False)
         return spec, audio_norm
 
-    def __getitem__(self, index: int) -> tuple:
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         return self.get_audio_text_pair(self.audiopaths_and_text[index])
 
     def __len__(self) -> int:
@@ -342,10 +381,13 @@ class TextAudioLoader(torch.utils.data.Dataset):
 class TextAudioCollate:
     """Zero-pads model inputs and targets"""
 
-    def __init__(self, return_ids=False):
+    def __init__(self, return_ids: bool = False) -> None:
         self.return_ids = return_ids
 
-    def __call__(self, batch):
+    def __call__(
+        self,
+        batch: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Collate's training batch from normalized text and aduio
         PARAMS
         ------
@@ -413,13 +455,13 @@ class DistributedBucketSampler(torch.utils.data.distributed.DistributedSampler):
 
     def __init__(
         self,
-        dataset,
-        batch_size,
-        boundaries,
-        num_replicas=None,
-        rank=None,
-        shuffle=True,
-    ):
+        dataset: TextAudioLoader | TextAudioLoaderMultiNSFsid,
+        batch_size: int,
+        boundaries: list[int],
+        num_replicas: int | None = None,
+        rank: int | None = None,
+        shuffle: bool = True,
+    ) -> None:
         super().__init__(dataset, num_replicas=num_replicas, rank=rank, shuffle=shuffle)
         self.lengths = dataset.lengths
         self.batch_size = batch_size
@@ -429,7 +471,7 @@ class DistributedBucketSampler(torch.utils.data.distributed.DistributedSampler):
         self.total_size = sum(self.num_samples_per_bucket)
         self.num_samples = self.total_size // self.num_replicas
 
-    def _create_buckets(self):
+    def _create_buckets(self) -> tuple[list[list[int]], list[int]]:
         buckets = [[] for _ in range(len(self.boundaries) - 1)]
         for i in range(len(self.lengths)):
             length = self.lengths[i]
@@ -452,7 +494,7 @@ class DistributedBucketSampler(torch.utils.data.distributed.DistributedSampler):
             num_samples_per_bucket.append(len_bucket + rem)
         return buckets, num_samples_per_bucket
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[list[int]]:
         # deterministically shuffle based on epoch
         g = torch.Generator()
         g.manual_seed(self.epoch)
@@ -501,7 +543,7 @@ class DistributedBucketSampler(torch.utils.data.distributed.DistributedSampler):
         assert len(self.batches) * self.batch_size == self.num_samples
         return iter(self.batches)
 
-    def _bisect(self, x: torch.Tensor, lo=0, hi=None):
+    def _bisect(self, x: int, lo: int = 0, hi: int | None = None) -> int:
         if hi is None:
             hi = len(self.boundaries) - 1
 
