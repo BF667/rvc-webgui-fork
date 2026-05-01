@@ -4,17 +4,15 @@ import traceback
 from pathlib import Path
 
 from tap import Tap
+from loguru import logger
 
 now_dir = os.getcwd()
 sys.path.append(now_dir)
-import logging
 
 import numpy as np
 
 from infer.lib.audio import load_audio
 from lib.f0 import Generator, PitchMethod
-
-from multiprocessing import Process
 
 
 class ExtractF0Args(Tap):
@@ -33,13 +31,15 @@ class ExtractF0Args(Tap):
 
 args = ExtractF0Args().parse_args()
 exp_dir = args.exp_dir
-f = open(exp_dir / "extract_f0_feature.log", "a+")
-
-
-def printt(strr):
-    print(strr)
-    f.write(f"{strr}\n")
-    f.flush()
+logger.remove()
+logger.add(
+    exp_dir / "extract_f0_feature.log",
+    level="INFO",
+    serialize=True,
+    enqueue=True,
+    backtrace=False,
+    diagnose=False,
+)
 
 
 n_p = args.n_p
@@ -61,47 +61,66 @@ class FeatureInput:
 
     def go(self, paths, f0_method):
         if len(paths) == 0:
-            printt("no-f0-todo")
+            logger.bind(event="f0_empty", total=0).info("No f0 files to process")
         else:
-            printt(f"todo-f0-{len(paths)}")
-            n = max(len(paths) // 5, 1)  # print at most 5 lines per process
+            logger.bind(
+                event="f0_started",
+                total=len(paths),
+                method=f0_method,
+            ).info("Starting f0 extraction")
             for idx, (inp_path, opt_path1, opt_path2) in enumerate(paths):
                 try:
-                    if idx % n == 0:
-                        printt(f"f0ing,now-{idx},all-{len(paths)},-{inp_path}")
-                    if (
-                        os.path.exists(opt_path1 + ".npy") == True
-                        and os.path.exists(opt_path2 + ".npy") == True
-                    ):
-                        continue
-                    audio = load_audio(inp_path, self.fs)
-                    p_len = audio.shape[0] // self.hop
-                    coarse_pit, featur_pit = self.f0_gen.calculate(
-                        audio,
-                        p_len,
-                        0,
-                        f0_method,
-                        3,
+                    skipped = (
+                        os.path.exists(opt_path1 + ".npy")
+                        and os.path.exists(opt_path2 + ".npy")
                     )
-                    np.save(
-                        opt_path2,
-                        featur_pit,
-                        allow_pickle=False,
-                    )  # nsf
-                    np.save(
-                        opt_path1,
-                        coarse_pit,
-                        allow_pickle=False,
-                    )  # ori
-                except:
-                    printt("f0fail-%s-%s-%s" % (idx, inp_path, traceback.format_exc()))
+                    if not skipped:
+                        audio = load_audio(inp_path, self.fs)
+                        p_len = audio.shape[0] // self.hop
+                        coarse_pit, featur_pit = self.f0_gen.calculate(
+                            audio,
+                            p_len,
+                            0,
+                            f0_method,
+                            3,
+                        )
+                        np.save(
+                            opt_path2,
+                            featur_pit,
+                            allow_pickle=False,
+                        )
+                        np.save(
+                            opt_path1,
+                            coarse_pit,
+                            allow_pickle=False,
+                        )
+                    logger.bind(
+                        event="ui_progress",
+                        detail_event="f0_progress",
+                        stage="extract_f0",
+                        current=idx + 1,
+                        total=len(paths),
+                        fraction=(idx + 1) / max(len(paths), 1),
+                        message=f"Extracting pitch {idx + 1}/{len(paths)}: {Path(inp_path).name}",
+                        file=inp_path,
+                        skipped=skipped,
+                    ).info(f"Processed f0 for {Path(inp_path).name}")
+                except Exception:
+                    logger.bind(
+                        event="ui_progress",
+                        detail_event="f0_failed",
+                        stage="extract_f0",
+                        current=idx + 1,
+                        total=len(paths),
+                        fraction=(idx + 1) / max(len(paths), 1),
+                        message=f"Pitch extraction failed at {idx + 1}/{len(paths)}: {Path(inp_path).name}",
+                        file=inp_path,
+                        traceback=traceback.format_exc(),
+                    ).exception(f"Failed f0 extraction for {Path(inp_path).name}")
 
 
 if __name__ == "__main__":
-    # exp_dir=r"E:\codes\py39\dataset\mi-test"
-    # n_p=16
-    # f = open("%s/log_extract_f0.log"%exp_dir, "w")
-    printt(" ".join(sys.argv))
+    logger.bind(event="f0_args", argv=sys.argv[1:]).info("Received f0 extraction args")
     featureInput = FeatureInput()
     paths = []
     inp_root = exp_dir / "1_16k_wavs"
@@ -117,17 +136,4 @@ if __name__ == "__main__":
         opt_path1 = opt_root1 / wav_file.name
         opt_path2 = opt_root2 / wav_file.name
         paths.append([str(inp_path), str(opt_path1), str(opt_path2)])
-
-    ps = []
-    for i in range(n_p):
-        p = Process(
-            target=featureInput.go,
-            args=(
-                paths[i::n_p],
-                f0method,
-            ),
-        )
-        ps.append(p)
-        p.start()
-    for i in range(n_p):
-        ps[i].join()
+    featureInput.go(paths, f0method)

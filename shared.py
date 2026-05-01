@@ -10,9 +10,7 @@ load_dotenv()
 logging.getLogger("numba").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("fairseq").setLevel(logging.WARNING)
-# Mute torio's aggressive FFmpeg debug traces
 logging.getLogger("torio").setLevel(logging.ERROR)
-# Mute fairseq's tensorboardX nag
 logging.getLogger("fairseq").setLevel(logging.WARNING)
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
@@ -23,7 +21,8 @@ from configs.config import Config
 from i18n.i18n import I18nAuto
 from infer.modules.vc.modules import VC
 
-logger = logging.getLogger(__name__)
+startup_logger = logging.getLogger(__name__)
+
 now_dir = Path.cwd()
 tmp = now_dir / "TEMP"
 shutil.rmtree(tmp, ignore_errors=True)
@@ -42,7 +41,7 @@ vc = VC(config)
 
 
 i18n = I18nAuto()
-logger.info(i18n)
+startup_logger.info(i18n)
 # Get GPU count
 ngpu = torch.cuda.device_count()
 gpu_infos: list[str] = []
@@ -108,7 +107,7 @@ rmvpe_root = Path(os.getenv("RMVPE_ROOT", "assets/rmvpe"))
 
 names = []
 for entry in weight_root.iterdir():
-    print(f"Checking: {entry.name}")
+    startup_logger.debug("Checking weight candidate %s", entry.name)
     if entry.suffix == ".pth":
         names.append(entry.name)
 index_paths = [""]  # Fix for gradio 5

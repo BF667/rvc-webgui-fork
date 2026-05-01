@@ -5,10 +5,10 @@ from pathlib import Path
 from typing import Literal
 
 from tap import Tap
+from loguru import logger
 
 now_dir = os.getcwd()
 sys.path.append(now_dir)
-import logging
 
 import numpy as np
 
@@ -23,39 +23,33 @@ def parse_bool(value: BoolString) -> bool:
 
 
 class ExtractF0RmvpeArgs(Tap):
-    # Total number of extraction partitions.
-    n_part: int
-    # Partition index handled by this worker.
-    i_part: int
     # GPU ID assigned to this worker.
     i_gpu: str
     # Experiment directory.
-    exp_dir: str
+    exp_dir: Path
     # Whether to use half precision.
     is_half: BoolString
 
     def configure(self) -> None:
-        self.add_argument("n_part")
-        self.add_argument("i_part")
         self.add_argument("i_gpu")
         self.add_argument("exp_dir")
         self.add_argument("is_half")
 
 
 args = ExtractF0RmvpeArgs().parse_args()
-n_part = args.n_part
-i_part = args.i_part
 i_gpu = args.i_gpu
 os.environ["CUDA_VISIBLE_DEVICES"] = str(i_gpu)
 exp_dir = args.exp_dir
 is_half = parse_bool(args.is_half)
-f = open(f"{exp_dir}/extract_f0_feature.log", "a+")
-
-
-def printt(strr):
-    print(strr)
-    f.write(f"{strr}\n")
-    f.flush()
+logger.remove()
+logger.add(
+    exp_dir / "extract_f0_feature.log",
+    level="INFO",
+    serialize=True,
+    enqueue=True,
+    backtrace=False,
+    diagnose=False,
+)
 
 
 class FeatureInput:
@@ -73,76 +67,85 @@ class FeatureInput:
 
     def go(self, paths, f0_method):
         if len(paths) == 0:
-            printt("no-f0-todo")
+            logger.bind(event="f0_empty", total=0, method=f0_method).info(
+                "No RMVPE f0 files to process"
+            )
         else:
-            printt(f"todo-f0-{len(paths)}")
-            n = max(len(paths) // 5, 1)  # print at most 5 lines per process
+            logger.bind(
+                event="f0_started",
+                total=len(paths),
+                method=f0_method,
+                gpu=i_gpu,
+            ).info("Starting RMVPE f0 extraction")
             for idx, (inp_path, opt_path1, opt_path2) in enumerate(paths):
                 try:
-                    if idx % n == 0:
-                        printt(f"f0ing,now-{idx},all-{len(paths)},-{inp_path}")
-                    if (
-                        os.path.exists(opt_path1 + ".npy") == True
-                        and os.path.exists(opt_path2 + ".npy") == True
-                    ):
-                        continue
-                    audio = load_audio(inp_path, self.fs)
-                    p_len = audio.shape[0] // self.hop
-                    coarse_pit, featur_pit = self.f0_gen.calculate(
-                        audio,
-                        p_len,
-                        0,
-                        "rmvpe",
-                        3,
+                    skipped = (
+                        os.path.exists(opt_path1 + ".npy")
+                        and os.path.exists(opt_path2 + ".npy")
                     )
-                    np.save(
-                        opt_path2,
-                        featur_pit,
-                        allow_pickle=False,
-                    )  # nsf
-                    np.save(
-                        opt_path1,
-                        coarse_pit,
-                        allow_pickle=False,
-                    )  # ori
-                except:
-                    printt("f0fail-%s-%s-%s" % (idx, inp_path, traceback.format_exc()))
+                    if not skipped:
+                        audio = load_audio(inp_path, self.fs)
+                        p_len = audio.shape[0] // self.hop
+                        coarse_pit, featur_pit = self.f0_gen.calculate(
+                            audio,
+                            p_len,
+                            0,
+                            "rmvpe",
+                            3,
+                        )
+                        np.save(opt_path2, featur_pit, allow_pickle=False)
+                        np.save(opt_path1, coarse_pit, allow_pickle=False)
+                    logger.bind(
+                        event="ui_progress",
+                        detail_event="f0_progress",
+                        stage="extract_f0",
+                        current=idx + 1,
+                        total=len(paths),
+                        fraction=(idx + 1) / max(len(paths), 1),
+                        message=f"Extracting RMVPE pitch {idx + 1}/{len(paths)}: {Path(inp_path).name}",
+                        file=inp_path,
+                        skipped=skipped,
+                        gpu=i_gpu,
+                    ).info(f"Processed RMVPE f0 for {Path(inp_path).name}")
+                except Exception:
+                    logger.bind(
+                        event="ui_progress",
+                        detail_event="f0_failed",
+                        stage="extract_f0",
+                        current=idx + 1,
+                        total=len(paths),
+                        fraction=(idx + 1) / max(len(paths), 1),
+                        message=f"RMVPE pitch extraction failed at {idx + 1}/{len(paths)}: {Path(inp_path).name}",
+                        file=inp_path,
+                        gpu=i_gpu,
+                        traceback=traceback.format_exc(),
+                    ).exception(f"Failed RMVPE f0 extraction for {Path(inp_path).name}")
 
 
 if __name__ == "__main__":
-    # exp_dir=r"E:\codes\py39\dataset\mi-test"
-    # n_p=16
-    # f = open("%s/log_extract_f0.log"%exp_dir, "w")
-    printt(" ".join(sys.argv))
+    logger.bind(event="f0_args", argv=sys.argv[1:], gpu=i_gpu).info(
+        "Received RMVPE extraction args"
+    )
     featureInput = FeatureInput()
     paths = []
-    inp_root = "%s/1_16k_wavs" % (exp_dir)
-    opt_root1 = "%s/2a_f0" % (exp_dir)
-    opt_root2 = "%s/2b-f0nsf" % (exp_dir)
+    inp_root = exp_dir / "1_16k_wavs"
+    opt_root1 = exp_dir / "2a_f0"
+    opt_root2 = exp_dir / "2b-f0nsf"
 
-    os.makedirs(opt_root1, exist_ok=True)
-    os.makedirs(opt_root2, exist_ok=True)
-    for name in sorted(list(os.listdir(inp_root))):
-        inp_path = "%s/%s" % (inp_root, name)
-        if "spec" in inp_path:
+    opt_root1.mkdir(parents=True, exist_ok=True)
+    opt_root2.mkdir(parents=True, exist_ok=True)
+    for wav_file in sorted(inp_root.iterdir(), key=lambda path: path.name):
+        inp_path = wav_file
+        if "spec" in inp_path.name:
             continue
-        opt_path1 = "%s/%s" % (opt_root1, name)
-        opt_path2 = "%s/%s" % (opt_root2, name)
-        paths.append([inp_path, opt_path1, opt_path2])
+        opt_path1 = opt_root1 / wav_file.name
+        opt_path2 = opt_root2 / wav_file.name
+        paths.append([str(inp_path), str(opt_path1), str(opt_path2)])
     try:
-        featureInput.go(paths[i_part::n_part], "rmvpe")
-    except:
-        printt("f0_all_fail-%s" % (traceback.format_exc()))
-    # ps = []
-    # for i in range(n_p):
-    #     p = Process(
-    #         target=featureInput.go,
-    #         args=(
-    #             paths[i::n_p],
-    #             f0method,
-    #         ),
-    #     )
-    #     ps.append(p)
-    #     p.start()
-    # for i in range(n_p):
-    #     ps[i].join()
+        featureInput.go(paths, "rmvpe")
+    except Exception:
+        logger.bind(
+            event="f0_failed",
+            traceback=traceback.format_exc(),
+            gpu=i_gpu,
+        ).exception("RMVPE extraction stage failed")

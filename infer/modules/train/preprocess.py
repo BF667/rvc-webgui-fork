@@ -1,4 +1,3 @@
-import multiprocessing
 import sys
 from pathlib import Path
 from typing import Literal, cast
@@ -14,6 +13,7 @@ import librosa
 import numpy as np
 from numpy.typing import NDArray
 from scipy.io import wavfile
+from loguru import logger
 
 from infer.lib.audio import load_audio
 from infer.lib.slicer2 import Slicer
@@ -49,21 +49,21 @@ class PreprocessArgs(Tap):
 
 
 args = PreprocessArgs().parse_args()
-print(*sys.argv[1:])
 inp_root = args.inp_root
 sr = args.sr
 n_p = args.n_p
 exp_dir = args.exp_dir
 noparallel = parse_bool(args.noparallel)
 per = args.per
-
-f = (exp_dir / "preprocess.log").open("a+")
-
-
-def println(strr):
-    print(strr)
-    f.write(f"{strr}\n")
-    f.flush()
+logger.remove()
+logger.add(
+    exp_dir / "preprocess.log",
+    level="INFO",
+    serialize=True,
+    enqueue=True,
+    backtrace=False,
+    diagnose=False,
+)
 
 
 class PreProcess:
@@ -79,6 +79,7 @@ class PreProcess:
     exp_dir: Path
     gt_wavs_dir: Path
     wavs16k_dir: Path
+    total_files: int
 
     def __init__(self: "PreProcess", sr: int, exp_dir: Path, per=3.7):
         self.slicer = Slicer(
@@ -104,6 +105,7 @@ class PreProcess:
         self.exp_dir: Path = exp_dir
         self.gt_wavs_dir: Path = exp_dir / "0_gt_wavs"
         self.wavs16k_dir: Path = exp_dir / "1_16k_wavs"
+        self.total_files = 1
         self.exp_dir.mkdir(parents=True, exist_ok=True)
         self.gt_wavs_dir.mkdir(parents=True, exist_ok=True)
         self.wavs16k_dir.mkdir(parents=True, exist_ok=True)
@@ -113,7 +115,7 @@ class PreProcess:
     ) -> None:
         tmp_max = np.abs(tmp_audio).max()
         if tmp_max > 2.5:
-            print("%s-%s-%s-filtered" % (idx0, idx1, tmp_max))
+            logger.warning(f"Skipping loud segment {idx0}_{idx1} with peak {tmp_max}")
             return
         tmp_audio = (tmp_audio / tmp_max * (self.max * self.alpha)) + (
             1 - self.alpha
@@ -154,9 +156,28 @@ class PreProcess:
                         idx1 += 1
                         break
                 self.norm_write(tmp_audio, idx0, idx1)
-            println(f"{path}\t-> Success")
-        except:
-            println(f"{path}\t-> {traceback.format_exc()}")
+            logger.bind(
+                event="ui_progress",
+                detail_event="preprocess_file_done",
+                current=idx0 + 1,
+                total=self.total_files,
+                fraction=(idx0 + 1) / max(self.total_files, 1),
+                stage="preprocess",
+                message=f"Preprocessing {idx0 + 1}/{self.total_files}: {path.name}",
+                file=str(path),
+            ).info(f"Preprocessed {path.name}")
+        except Exception:
+            logger.bind(
+                event="ui_progress",
+                detail_event="preprocess_file_failed",
+                current=idx0 + 1,
+                total=self.total_files,
+                fraction=(idx0 + 1) / max(self.total_files, 1),
+                stage="preprocess",
+                message=f"Preprocess failed at {idx0 + 1}/{self.total_files}: {path.name}",
+                file=str(path),
+                traceback=traceback.format_exc(),
+            ).exception(f"Failed to preprocess {path.name}")
 
     def pipeline_mp(self: "PreProcess", infos: list[tuple[Path, int]]) -> None:
         for path, idx0 in infos:
@@ -170,28 +191,29 @@ class PreProcess:
                     sorted(inp_root.iterdir(), key=lambda p: p.name)
                 )
             ]
-            if noparallel:
-                for i in range(n_p):
-                    self.pipeline_mp(infos[i::n_p])
-            else:
-                ps = []
-                for i in range(n_p):
-                    p = multiprocessing.Process(
-                        target=self.pipeline_mp, args=(infos[i::n_p],)
-                    )
-                    ps.append(p)
-                    p.start()
-                for i in range(n_p):
-                    ps[i].join()
-        except:
-            println(f"Fail. {traceback.format_exc()}")
+            self.total_files = max(len(infos), 1)
+            _ = n_p
+            for path, idx0 in infos:
+                self.pipeline(path, idx0)
+        except Exception:
+            logger.bind(
+                event="preprocess_failed",
+                traceback=traceback.format_exc(),
+            ).exception("Preprocess stage failed")
 
 
 def preprocess_trainset(inp_root: Path, sr: int, n_p: int, exp_dir: Path, per: float):
     pp = PreProcess(sr, exp_dir, per)
-    println("start preprocess")
+    logger.bind(
+        event="preprocess_started",
+        input_root=str(inp_root),
+        sample_rate=sr,
+        workers=n_p,
+        noparallel=noparallel,
+        segment_seconds=per,
+    ).info("Starting preprocess")
     pp.pipeline_mp_inp_dir(inp_root, n_p)
-    println("end preprocess")
+    logger.bind(event="preprocess_finished").info("Finished preprocess")
 
 
 if __name__ == "__main__":

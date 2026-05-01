@@ -8,10 +8,7 @@ from typing import TypeVar, TypedDict, cast
 
 import torch
 from tap import Tap
-
-import logging
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 version_config_list: list[str] = [
@@ -154,9 +151,9 @@ class Config:
                 strr = f.read().replace("true", "false")
             with open(f"configs/inuse/{config_file}", "w") as f:
                 f.write(strr)
-            logger.info("overwrite " + config_file)
+            logger.info(f"overwrite {config_file}")
         self.preprocess_per = 3.0
-        logger.info("overwrite preprocess_per to %d" % (self.preprocess_per))
+        logger.info(f"overwrite preprocess_per to {self.preprocess_per}")
 
     def device_config(self) -> tuple:
         if torch.cuda.is_available():
@@ -173,11 +170,11 @@ class Config:
                 or "TITAN V" in self.gpu_name.upper()
                 or "TITAN P" in self.gpu_name.upper()
             ):
-                logger.info("Found GPU %s, force to fp32", self.gpu_name)
+                logger.info(f"Found GPU {self.gpu_name}, force to fp32")
                 self.is_half = False
                 self.use_fp32_config()
             else:
-                logger.info("Found GPU %s", self.gpu_name)
+                logger.info(f"Found GPU {self.gpu_name}")
             self.gpu_mem = int(
                 torch.cuda.get_device_properties(i_device).total_memory
                 / 1024
@@ -222,7 +219,6 @@ class Config:
         if self.instead:
             logger.info(f"Use {self.instead} instead")
         logger.info(
-            "Half-precision floating-point: %s, device: %s"
-            % (self.is_half, self.device)
+            f"Half-precision floating-point: {self.is_half}, device: {self.device}"
         )
         return x_pad, x_query, x_center, x_max
