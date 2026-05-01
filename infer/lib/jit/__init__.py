@@ -1,6 +1,7 @@
 from io import BytesIO
 import pickle
 import time
+from pathlib import Path
 from typing import Literal, TypeAlias, cast
 import torch
 from tqdm import tqdm
@@ -11,7 +12,7 @@ TensorInputs: TypeAlias = dict[str, torch.Tensor]
 JitMode: TypeAlias = Literal["trace", "script"]
 
 
-def load_inputs(path: str, device: DeviceLike, is_half: bool = False) -> TensorInputs:
+def load_inputs(path: Path, device: DeviceLike, is_half: bool = False) -> TensorInputs:
     parm = torch.load(path, map_location=torch.device("cpu"), weights_only=False)
     for key in parm.keys():
         parm[key] = parm[key].to(device)
@@ -24,7 +25,7 @@ def load_inputs(path: str, device: DeviceLike, is_half: bool = False) -> TensorI
 
 def benchmark(
     model: torch.nn.Module,
-    inputs_path: str,
+    inputs_path: Path,
     device: DeviceLike = torch.device("cpu"),
     epoch: int = 1000,
     is_half: bool = False,
@@ -41,7 +42,7 @@ def benchmark(
 
 def jit_warm_up(
     model: torch.nn.Module,
-    inputs_path: str,
+    inputs_path: Path,
     device: DeviceLike = torch.device("cpu"),
     epoch: int = 5,
     is_half: bool = False,
@@ -50,10 +51,10 @@ def jit_warm_up(
 
 
 def to_jit_model(
-    model_path: str,
+    model_path: Path,
     model_type: str,
     mode: JitMode = "trace",
-    inputs_path: str | None = None,
+    inputs_path: Path | None = None,
     device: DeviceLike = torch.device("cpu"),
     is_half: bool = False,
 ) -> tuple[torch.nn.Module, torch.jit.ScriptModule]:
@@ -124,27 +125,27 @@ def export(
     return cpt
 
 
-def load(path: str) -> dict:
+def load(path: Path) -> dict:
     with open(path, "rb") as f:
         return pickle.load(f)
 
 
-def save(ckpt: dict, save_path: str) -> None:
+def save(ckpt: dict, save_path: Path) -> None:
     with open(save_path, "wb") as f:
         pickle.dump(ckpt, f)
 
 
 def rmvpe_jit_export(
-    model_path: str,
+    model_path: Path,
     mode: JitMode = "script",
-    inputs_path: str | None = None,
-    save_path: str | None = None,
+    inputs_path: Path | None = None,
+    save_path: Path | None = None,
     device: DeviceLike = torch.device("cpu"),
     is_half: bool = False,
 ) -> dict:
     if not save_path:
-        save_path = model_path.rstrip(".pth")
-        save_path += ".half.jit" if is_half else ".jit"
+        save_path = model_path.with_suffix("")
+        save_path = save_path.with_suffix(".half.jit" if is_half else ".jit")
     if "cuda" in str(device) and ":" not in str(device):
         device = torch.device("cuda:0")
     from .get_rmvpe import get_rmvpe
@@ -161,16 +162,16 @@ def rmvpe_jit_export(
 
 
 def synthesizer_jit_export(
-    model_path: str,
+    model_path: Path,
     mode: JitMode = "script",
-    inputs_path: str | None = None,
-    save_path: str | None = None,
+    inputs_path: Path | None = None,
+    save_path: Path | None = None,
     device: DeviceLike = torch.device("cpu"),
     is_half: bool = False,
 ) -> dict:
     if not save_path:
-        save_path = model_path.rstrip(".pth")
-        save_path += ".half.jit" if is_half else ".jit"
+        save_path = model_path.with_suffix("")
+        save_path = save_path.with_suffix(".half.jit" if is_half else ".jit")
     if "cuda" in str(device) and ":" not in str(device):
         device = torch.device("cuda:0")
     from .get_synthesizer import get_synthesizer

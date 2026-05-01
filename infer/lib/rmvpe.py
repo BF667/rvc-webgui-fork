@@ -1,5 +1,6 @@
 from io import BytesIO
 import os
+from pathlib import Path
 from typing import Literal, TypeAlias, cast, overload
 import numpy as np
 import torch
@@ -560,7 +561,7 @@ class MelSpectrogram(torch.nn.Module):
 class RMVPE:
     def __init__(
         self,
-        model_path: str,
+        model_path: Path,
         is_half: bool,
         device: str | torch.device | None = None,
         use_jit: bool = False,
@@ -580,11 +581,11 @@ class RMVPE:
             device = self.device
 
         def get_jit_model() -> torch.jit.ScriptModule:
-            jit_model_path = model_path.rstrip(".pth")
-            jit_model_path += ".half.jit" if is_half else ".jit"
+            jit_model_path = model_path.with_suffix("")
+            jit_model_path = jit_model_path.with_suffix(".half.jit" if is_half else ".jit")
             reload = False
             ckpt = None
-            if os.path.exists(jit_model_path):
+            if jit_model_path.exists():
                 ckpt = jit.load(jit_model_path)
                 model_device = ckpt["device"]
                 if model_device != str(self.device):
@@ -857,7 +858,7 @@ if __name__ == "__main__":
     audio_bak = audio.copy()
     if sampling_rate != 16000:
         audio = librosa.resample(audio, orig_sr=sampling_rate, target_sr=16000)
-    model_path = "assets/rmvpe/rmvpe.pt"
+    model_path = Path("assets/rmvpe/rmvpe.pt")
     thred = 0.03  # 0.01
     device = "cuda" if torch.cuda.is_available() else "cpu"
     rmvpe = RMVPE(model_path, is_half=False, device=device)

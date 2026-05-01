@@ -273,7 +273,7 @@ def extract_f0(
             from infer.lib.rmvpe import RMVPE
 
             state["rmvpe"] = RMVPE(
-                str(rmvpe_root / "rmvpe.pt"),
+                rmvpe_root / "rmvpe.pt",
                 is_half=is_half,
                 device=device,
             )
