@@ -2,6 +2,8 @@ import os
 import sys
 import traceback
 from pathlib import Path
+from pathlib import Path
+
 from collections import OrderedDict
 
 import torch
@@ -54,7 +56,7 @@ def savee(ckpt, sr, if_f0, name, epoch, version, hps):
         return traceback.format_exc()
 
 
-def show_info(path: str):
+def show_info(path: Path):
     try:
         a = torch.load(Path(path), map_location="cpu", weights_only=False)
         return "Model info:%s\nSample rate:%s\nDoes the model use pitch guidance:%s\nVersion:%s" % (
@@ -67,7 +69,7 @@ def show_info(path: str):
         return traceback.format_exc()
 
 
-def extract_small_model(path: str, name: str, sr, if_f0, info, version):
+def extract_small_model(path: Path, name: str, sr, if_f0, info, version):
     try:
         ckpt = torch.load(Path(path), map_location="cpu", weights_only=False)
         if "model" in ckpt:
@@ -198,7 +200,7 @@ def extract_small_model(path: str, name: str, sr, if_f0, info, version):
         return traceback.format_exc()
 
 
-def change_info(path: str, info, name):
+def change_info(path: Path, info, name):
     try:
         ckpt = torch.load(Path(path), map_location="cpu", weights_only=False)
         ckpt["info"] = info
@@ -210,7 +212,7 @@ def change_info(path: str, info, name):
         return traceback.format_exc()
 
 
-def merge(path1: str, path2: str, alpha1, sr, f0, info, name, version):
+def merge(path1: Path, path2: Path, alpha1, sr, f0, info, name, version):
     try:
 
         def extract(ckpt):
