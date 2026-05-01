@@ -49,8 +49,8 @@ class TextAudioLoaderMultiNSFsid(torch.utils.data.Dataset):
         self.lengths = lengths
 
     def get_sid(self, sid: str | int) -> torch.Tensor:
-        sid = torch.LongTensor([int(sid)])
-        return sid
+        sid_tensor = torch.LongTensor([int(sid)])
+        return sid_tensor
 
     def get_audio_text_pair(self, audiopath_and_text: list) -> tuple:
         # separate filename and text
@@ -82,22 +82,22 @@ class TextAudioLoaderMultiNSFsid(torch.utils.data.Dataset):
         return (spec, wav, phone, pitch, pitchf, dv)
 
     def get_labels(self, phone: str | Path, pitch: str | Path, pitchf: str | Path) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        phone = np.load(phone)
-        phone = np.repeat(phone, 2, axis=0)
-        pitch = np.load(pitch)
-        pitchf = np.load(pitchf)
-        n_num = min(phone.shape[0], 900)  # DistributedBucketSampler
+        phone_np = np.load(phone)
+        phone_np = np.repeat(phone_np, 2, axis=0)
+        pitch_np = np.load(pitch)
+        pitchf_np = np.load(pitchf)
+        n_num = min(phone_np.shape[0], 900)  # DistributedBucketSampler
         # print(234,phone.shape,pitch.shape)
-        phone = phone[:n_num, :]
-        pitch = pitch[:n_num]
-        pitchf = pitchf[:n_num]
-        phone = torch.FloatTensor(phone)
-        pitch = torch.LongTensor(pitch)
-        pitchf = torch.FloatTensor(pitchf)
-        return phone, pitch, pitchf
+        phone_np = phone_np[:n_num, :]
+        pitch_np = pitch_np[:n_num]
+        pitchf_np = pitchf_np[:n_num]
+        phone_t = torch.FloatTensor(phone_np)
+        pitch_t = torch.LongTensor(pitch_np)
+        pitchf_t = torch.FloatTensor(pitchf_np)
+        return phone_t, pitch_t, pitchf_t
 
     def get_audio(self, filename: str | Path) -> tuple[torch.Tensor, torch.Tensor]:
-        audio, sampling_rate = load_wav_to_torch(filename)
+        audio, sampling_rate = load_wav_to_torch(Path(filename))
         if sampling_rate != self.sampling_rate:
             raise ValueError(
                 "{} SR doesn't match target {} SR".format(
@@ -257,8 +257,8 @@ class TextAudioLoader(torch.utils.data.Dataset):
         self.lengths = lengths
 
     def get_sid(self, sid: str | int) -> torch.Tensor:
-        sid = torch.LongTensor([int(sid)])
-        return sid
+        sid_tensor = torch.LongTensor([int(sid)])
+        return sid_tensor
 
     def get_audio_text_pair(self, audiopath_and_text: list) -> tuple:
         # separate filename and text
@@ -281,15 +281,15 @@ class TextAudioLoader(torch.utils.data.Dataset):
         return (spec, wav, phone, dv)
 
     def get_labels(self, phone: str | Path) -> torch.Tensor:
-        phone = np.load(phone)
-        phone = np.repeat(phone, 2, axis=0)
-        n_num = min(phone.shape[0], 900)  # DistributedBucketSampler
-        phone = phone[:n_num, :]
-        phone = torch.FloatTensor(phone)
-        return phone
+        phone_np = np.load(phone)
+        phone_np = np.repeat(phone_np, 2, axis=0)
+        n_num = min(phone_np.shape[0], 900)  # DistributedBucketSampler
+        phone_np = phone_np[:n_num, :]
+        phone_t = torch.FloatTensor(phone_np)
+        return phone_t
 
     def get_audio(self, filename: str | Path) -> tuple[torch.Tensor, torch.Tensor]:
-        audio, sampling_rate = load_wav_to_torch(filename)
+        audio, sampling_rate = load_wav_to_torch(Path(filename))
         if sampling_rate != self.sampling_rate:
             raise ValueError(
                 "{} SR doesn't match target {} SR".format(
