@@ -3,6 +3,7 @@ import sys
 import traceback
 from collections import OrderedDict
 from pathlib import Path
+from typing import Any, Literal, cast
 
 import torch
 
@@ -13,9 +14,19 @@ i18n = I18nAuto()
 type WeightMap = dict[str, torch.Tensor]
 type CheckpointValue = WeightMap | list[object] | str | int
 type CheckpointDict = OrderedDict[str, CheckpointValue]
+type SampleRate = Literal["32k", "48k"]
+type ModelVersion = Literal["v2"]
 
 
-def savee(ckpt, sr, if_f0, name, epoch, version, hps):
+def savee(
+    ckpt: WeightMap,
+    sr: SampleRate,
+    if_f0: int | str,
+    name: str,
+    epoch: int,
+    version: ModelVersion,
+    hps: Any,
+) -> str:
     if int(if_f0) != 1 or version != "v2":
         return "Only v2 models with f0 are supported."
     try:
@@ -48,15 +59,15 @@ def savee(ckpt, sr, if_f0, name, epoch, version, hps):
         ]
         opt["info"] = "%sepoch" % epoch
         opt["sr"] = sr
-        opt["f0"] = if_f0
-        opt["version"] = version
+        opt["f0"] = 1
+        opt["version"] = "v2"
         torch.save(opt, Path("assets/weights") / f"{name}.pth")
         return "Success."
     except:
         return traceback.format_exc()
 
 
-def show_info(path: Path):
+def show_info(path: Path | str) -> str:
     try:
         a = torch.load(path, map_location="cpu", weights_only=False)
         return (
@@ -72,13 +83,21 @@ def show_info(path: Path):
         return traceback.format_exc()
 
 
-def extract_small_model(path: Path, name: str, sr, if_f0, info, version):
+def extract_small_model(
+    path: Path | str,
+    name: str,
+    sr: SampleRate,
+    if_f0: int | str,
+    info: str,
+    version: ModelVersion,
+) -> str:
     if int(if_f0) != 1 or version != "v2":
         return "Only v2 models with f0 are supported."
     try:
         ckpt = torch.load(path, map_location="cpu", weights_only=False)
         if "model" in ckpt:
             ckpt = ckpt["model"]
+        ckpt = cast(WeightMap, ckpt)
         weights: WeightMap = {}
         for key in ckpt.keys():
             if "enc_q" in key:
@@ -133,33 +152,42 @@ def extract_small_model(path: Path, name: str, sr, if_f0, info, version):
         if info == "":
             info = "Extracted model."
         opt["info"] = info
-        opt["version"] = version
+        opt["version"] = "v2"
         opt["sr"] = sr
-        opt["f0"] = int(if_f0)
+        opt["f0"] = 1
         torch.save(opt, Path("assets/weights") / f"{name}.pth")
         return "Success."
     except:
         return traceback.format_exc()
 
 
-def change_info(path: Path, info, name):
+def change_info(path: Path | str, info: str, name: str) -> str:
     try:
         ckpt = torch.load(path, map_location="cpu", weights_only=False)
         ckpt["info"] = info
         if name == "":
-            name = path.name
+            name = Path(path).name
         torch.save(ckpt, Path("assets/weights") / name)
         return "Success."
     except:
         return traceback.format_exc()
 
 
-def merge(path1: Path, path2: Path, alpha1, sr, f0, info, name, version):
+def merge(
+    path1: Path | str,
+    path2: Path | str,
+    alpha1: float,
+    sr: SampleRate,
+    f0: str,
+    info: str,
+    name: str,
+    version: ModelVersion,
+) -> str:
     if f0 != i18n("Yes") or version != "v2":
         return "Only v2 models with f0 are supported."
     try:
 
-        def extract(ckpt):
+        def extract(ckpt: dict[str, Any]) -> CheckpointDict:
             a = ckpt["model"]
             weights: WeightMap = {}
             for key in a.keys():

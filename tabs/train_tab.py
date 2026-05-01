@@ -10,7 +10,7 @@ import traceback
 from random import shuffle
 from collections.abc import Generator
 from time import sleep
-from typing import Any, Literal
+from typing import Literal, Any
 
 import faiss
 import gradio as gr
@@ -25,10 +25,11 @@ ProgressComponent = gr.Progress
 
 F0GPUVisible = True
 SampleRate = Literal["32k", "48k"]
+PitchExtractionMethod = Literal["pm", "harvest", "dio", "rmvpe", "rmvpe_gpu"]
 MODEL_VERSION = "v2"
 
 
-def change_f0_method(f0method8: str):
+def change_f0_method(f0method8: PitchExtractionMethod) -> dict[str, object]:
     if f0method8 == "rmvpe_gpu":
         visible = F0GPUVisible
     else:
@@ -124,7 +125,7 @@ def preprocess_dataset(
     exp_dir: str,
     sr: SampleRate,
     n_p: int,
-    progress=gr.Progress(),
+    progress: gr.Progress = gr.Progress(),
 ) -> Generator[str, None, None]:
     audio_dir_path = pathlib.Path(audio_dir)
     log_dir = pathlib.Path(shared.now_dir) / "logs" / exp_dir
@@ -200,8 +201,8 @@ def preprocess_meta(
     audio_files: list[str | pathlib.Path] | None,
     sr: SampleRate,
     n_p: int,
-    progress=gr.Progress(),
-):
+    progress: gr.Progress = gr.Progress(),
+) -> Generator[str, None, None]:
     save_dir = pathlib.Path(audio_dir) / experiment_name
     save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -224,7 +225,7 @@ def preprocess_meta(
 def extract_f0_feature(
     gpus: str,
     n_p: int,
-    f0method: str,
+    f0method: PitchExtractionMethod,
     exp_dir: str,
     gpus_rmvpe: str,
     progress: gr.Progress = gr.Progress(),
@@ -309,7 +310,7 @@ def extract_f0_feature(
     yield log
 
 
-def get_pretrained_models(path_str: str, f0_str: str, sr2: SampleRate):
+def get_pretrained_models(path_str: str, f0_str: str, sr2: SampleRate) -> tuple[str, str]:
     if_pretrained_generator_exist = os.access(
         "assets/pretrained%s/%sG%s.pth" % (path_str, f0_str, sr2), os.F_OK
     )
@@ -338,25 +339,25 @@ def get_pretrained_models(path_str: str, f0_str: str, sr2: SampleRate):
     )
 
 
-def change_sr2(sr2: SampleRate):
+def change_sr2(sr2: SampleRate) -> tuple[str, str]:
     return get_pretrained_models("_v2", "f0", sr2)
 
 
 def click_train(
     exp_dir1: str,
     sr2: SampleRate,
-    spk_id5,
-    save_epoch10,
-    total_epoch11,
-    batch_size12,
+    spk_id5: int,
+    save_epoch10: int,
+    total_epoch11: int,
+    batch_size12: int,
     if_save_latest13: str,
-    pretrained_G14,
-    pretrained_D15,
-    gpus16,
-    if_cache_gpu17,
-    if_save_every_weights18,
-    progress=gr.Progress(),
-):
+    pretrained_G14: str,
+    pretrained_D15: str,
+    gpus16: str,
+    if_cache_gpu17: str,
+    if_save_every_weights18: str,
+    progress: gr.Progress = gr.Progress(),
+) -> Generator[str, None, None]:
     # Generating file list
     exp_dir = "%s/logs/%s" % (shared.now_dir, exp_dir1)
     os.makedirs(exp_dir, exist_ok=True)
@@ -479,15 +480,19 @@ def click_train(
     yield f"Training finished with exit code {return_code}.\n{summary}".strip()
 
 
-def train_index(exp_dir1: str, progress=gr.Progress()):
+def train_index(
+    exp_dir1: str, progress: gr.Progress = gr.Progress()
+) -> Generator[str, None, None]:
     exp_dir = "logs/%s" % (exp_dir1)
     os.makedirs(exp_dir, exist_ok=True)
     feature_dir = "%s/3_feature768" % (exp_dir)
     if not os.path.exists(feature_dir):
-        return "Please perform feature extraction first!"
+        yield "Please perform feature extraction first!"
+        return
     listdir_res = list(os.listdir(feature_dir))
     if len(listdir_res) == 0:
-        return "Please perform feature extraction first!"
+        yield "Please perform feature extraction first!"
+        return
 
     progress(0.05, desc="Loading features...")  # Initial progress update
     infos = []
@@ -582,23 +587,23 @@ def train_index(exp_dir1: str, progress=gr.Progress()):
 
 
 def one_click_training(
-    exp_dir1,
-    sr2,
-    trainset_dir4,
-    spk_id5,
-    np7,
-    f0method8,
-    save_epoch10,
-    total_epoch11,
-    batch_size12,
-    if_save_latest13,
-    pretrained_G14,
-    pretrained_D15,
-    gpus16,
-    if_cache_gpu17,
-    if_save_every_weights18,
-    gpus_rmvpe,
-):
+    exp_dir1: str,
+    sr2: SampleRate,
+    trainset_dir4: str,
+    spk_id5: int,
+    np7: int,
+    f0method8: PitchExtractionMethod,
+    save_epoch10: int,
+    total_epoch11: int,
+    batch_size12: int,
+    if_save_latest13: str,
+    pretrained_G14: str,
+    pretrained_D15: str,
+    gpus16: str,
+    if_cache_gpu17: str,
+    if_save_every_weights18: str,
+    gpus_rmvpe: str,
+) -> Generator[str, None, None]:
     final_sections: list[str] = []
 
     # step1: Process data
@@ -650,7 +655,7 @@ def one_click_training(
     yield "\n\n".join(section for section in final_sections if section).strip()
 
 
-def create_train_tab():
+def create_train_tab() -> None:
 
     with gr.TabItem(i18n("Train")):
         with gr.Group():

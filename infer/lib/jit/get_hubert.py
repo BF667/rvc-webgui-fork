@@ -334,7 +334,11 @@ def get_hubert_model(
 
     hubert_model.extract_features = _hubert_extract_features
 
-    def infer(source, padding_mask, output_layer: torch.Tensor):
+    def infer(
+        source: torch.Tensor,
+        padding_mask: torch.Tensor | None,
+        output_layer: torch.Tensor,
+    ) -> torch.Tensor:
         output_layer_id = int(output_layer.item())
         if output_layer_id != 12:
             raise ValueError("Only v2 HuBERT output_layer=12 is supported.")
