@@ -1,9 +1,6 @@
 import os
 import sys
 import traceback
-from pathlib import Path
-from pathlib import Path
-
 from collections import OrderedDict
 
 import torch
@@ -58,12 +55,15 @@ def savee(ckpt, sr, if_f0, name, epoch, version, hps):
 
 def show_info(path: Path):
     try:
-        a = torch.load(Path(path), map_location="cpu", weights_only=False)
-        return "Model info:%s\nSample rate:%s\nDoes the model use pitch guidance:%s\nVersion:%s" % (
-            a.get("info", "None"),
-            a.get("sr", "None"),
-            a.get("f0", "None"),
-            a.get("version", "None"),
+        a = torch.load(path, map_location="cpu", weights_only=False)
+        return (
+            "Model info:%s\nSample rate:%s\nDoes the model use pitch guidance:%s\nVersion:%s"
+            % (
+                a.get("info", "None"),
+                a.get("sr", "None"),
+                a.get("f0", "None"),
+                a.get("version", "None"),
+            )
         )
     except:
         return traceback.format_exc()
@@ -71,7 +71,7 @@ def show_info(path: Path):
 
 def extract_small_model(path: Path, name: str, sr, if_f0, info, version):
     try:
-        ckpt = torch.load(Path(path), map_location="cpu", weights_only=False)
+        ckpt = torch.load(path, map_location="cpu", weights_only=False)
         if "model" in ckpt:
             ckpt = ckpt["model"]
         weights: WeightMap = {}
@@ -202,10 +202,10 @@ def extract_small_model(path: Path, name: str, sr, if_f0, info, version):
 
 def change_info(path: Path, info, name):
     try:
-        ckpt = torch.load(Path(path), map_location="cpu", weights_only=False)
+        ckpt = torch.load(path, map_location="cpu", weights_only=False)
         ckpt["info"] = info
         if name == "":
-            name = Path(path).name
+            name = path.name
         torch.save(ckpt, Path("assets/weights") / name)
         return "Success."
     except:
@@ -226,8 +226,8 @@ def merge(path1: Path, path2: Path, alpha1, sr, f0, info, name, version):
             opt["weight"] = weights
             return opt
 
-        ckpt1 = torch.load(Path(path1), map_location="cpu", weights_only=False)
-        ckpt2 = torch.load(Path(path2), map_location="cpu", weights_only=False)
+        ckpt1 = torch.load(path1, map_location="cpu", weights_only=False)
+        ckpt2 = torch.load(path2, map_location="cpu", weights_only=False)
         cfg = ckpt1["config"]
         if "model" in ckpt1:
             ckpt1 = extract(ckpt1)

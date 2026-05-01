@@ -85,7 +85,7 @@ class EpochRecorder:
 
 
 def main():
-    training_logger = utils.get_logger(hps.model_dir, stdout=True)
+    training_logger = utils.get_logger(Path(hps.model_dir), stdout=True)
     if "-" in hps.gpus:
         training_logger.warning(
             f"Multiple GPU ids were requested ({hps.gpus}), but training now runs in a single subprocess on GPU {selected_gpu} to avoid race conditions."
