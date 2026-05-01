@@ -1,7 +1,7 @@
 # RVC WebGUI Fork
 
 > [!WARNING]
-> This is a BREAKING fork! I am not going to support the old RVC model indefinitely!
+> This is a BREAKING fork! I am not going to support the old RVC model/f0 indefinitely!
 > 
 > If you are interested in a better maintained RVC you should check out: https://github.com/fumiama/Retrieval-based-Voice-Conversion-WebUI
 
