@@ -352,7 +352,7 @@ def get_hparams_from_file(config_path: Path):
     return hparams
 
 
-def check_git_hash(model_dir: str):
+def check_git_hash(model_dir: Path):
     source_dir = Path(os.path.realpath(__file__)).parent
     git_check = subprocess.run(
         ["git", "-C", str(source_dir), "rev-parse", "--show-toplevel"],
@@ -367,7 +367,7 @@ def check_git_hash(model_dir: str):
         text=True,
     ).strip()
 
-    git_hash_file = Path(model_dir) / "githash"
+    git_hash_file = model_dir / "githash"
     if git_hash_file.exists():
         saved_hash = git_hash_file.read_text()
         if saved_hash != cur_hash:
@@ -378,8 +378,8 @@ def check_git_hash(model_dir: str):
         git_hash_file.write_text(cur_hash)
 
 
-def get_logger(model_dir: str, filename: str = "train.log", *, stdout: bool = False):
-    log_dir = Path(model_dir)
+def get_logger(model_dir: Path, filename: str = "train.log", *, stdout: bool = False):
+    log_dir = model_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / filename
     logger.remove()

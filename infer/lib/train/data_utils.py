@@ -81,7 +81,9 @@ class TextAudioLoaderMultiNSFsid(torch.utils.data.Dataset):
 
         return (spec, wav, phone, pitch, pitchf, dv)
 
-    def get_labels(self, phone: str | Path, pitch: str | Path, pitchf: str | Path) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def get_labels(
+        self, phone: Path, pitch: Path, pitchf: Path
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         phone_np = np.load(phone)
         phone_np = np.repeat(phone_np, 2, axis=0)
         pitch_np = np.load(pitch)
@@ -280,7 +282,7 @@ class TextAudioLoader(torch.utils.data.Dataset):
             phone = phone[:len_min, :]
         return (spec, wav, phone, dv)
 
-    def get_labels(self, phone: str | Path) -> torch.Tensor:
+    def get_labels(self, phone: Path) -> torch.Tensor:
         phone_np = np.load(phone)
         phone_np = np.repeat(phone_np, 2, axis=0)
         n_num = min(phone_np.shape[0], 900)  # DistributedBucketSampler
