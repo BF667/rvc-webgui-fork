@@ -23,7 +23,7 @@ class Encoder(nn.Module):
         self.hidden_channels = hidden_channels
         self.filter_channels = filter_channels
         self.n_heads = n_heads
-        self.n_layers = int(n_layers)
+        self.n_layers = n_layers
         self.kernel_size = kernel_size
         self.p_dropout = p_dropout
         self.window_size = window_size
