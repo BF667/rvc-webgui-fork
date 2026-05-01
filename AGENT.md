@@ -26,7 +26,3 @@ This document provides essential guidelines and context for AI agents working on
 - **TypedDict**: Prefer `TypedDict` for defining the structure of dictionaries.
 - **Forward References**: Use string literals for forward references or rely on modern behavior (Python 3.13 handles most cases gracefully).
 - **Static Analysis**: The codebase aims for high type coverage to support static analysis.
-
-## Repository Context
-
-This repository is a modernized fork of the RVC WebUI. The goal is to improve maintainability, performance, and cross-platform compatibility while preserving core machine learning logic.
