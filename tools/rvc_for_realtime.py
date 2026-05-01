@@ -130,7 +130,9 @@ class RVC:
 
             def set_jit_model():
                 jit_pth_path = self.pth_path.with_suffix("")
-                jit_pth_path = jit_pth_path.with_suffix(".half.jit" if self.is_half else ".jit")
+                jit_pth_path = jit_pth_path.with_suffix(
+                    ".half.jit" if self.is_half else ".jit"
+                )
                 reload = False
                 cpt = None
                 if str(self.device) == "cuda":
