@@ -6,9 +6,10 @@ from multiprocessing import cpu_count
 from functools import wraps
 from typing import TypeVar, TypedDict, cast
 
-import torch
 from tap import Tap
 from loguru import logger
+
+from lib.accelerate_utils import get_accelerator, use_half_precision
 
 
 version_config_list: list[str] = [
@@ -19,12 +20,8 @@ version_config_list: list[str] = [
 T = TypeVar("T")
 
 
-class TrainConfig(TypedDict, total=False):
-    fp16_run: bool
-
-
 class VersionConfig(TypedDict, total=False):
-    train: TrainConfig
+    pass
 
 
 class ConfigArgs(Tap):
@@ -65,8 +62,6 @@ def singleton_class(cls: type[T]) -> type[T]:
 
 @singleton_class
 class Config:
-    device: str
-    is_half: bool
     use_jit: bool
     n_cpu: int
     gpu_name: str | None
@@ -87,8 +82,7 @@ class Config:
     x_max: int
 
     def __init__(self):
-        self.device = "cuda:0"
-        self.is_half: bool = True
+        accelerator = get_accelerator()
         self.use_jit: bool = False
         self.n_cpu: int = 0
         self.gpu_name: str | None = None
@@ -129,56 +123,23 @@ class Config:
             cmd_opts.noautoopen,
         )
 
-    def use_fp32_config(self):
-        for config_file in version_config_list:
-            self.json_config[config_file].setdefault("train", {})["fp16_run"] = False
-            with open(f"configs/inuse/{config_file}", "r") as f:
-                strr = f.read().replace("true", "false")
-            with open(f"configs/inuse/{config_file}", "w") as f:
-                f.write(strr)
-            logger.info(f"overwrite {config_file}")
-        self.preprocess_per = 3.0
-        logger.info(f"overwrite preprocess_per to {self.preprocess_per}")
-
     def device_config(self) -> tuple:
-        if torch.cuda.is_available():
-            i_device = int(self.device.split(":")[-1])
-            self.gpu_name = torch.cuda.get_device_name(i_device)
-            if (
-                ("16" in self.gpu_name and "V100" not in self.gpu_name.upper())
-                or "P40" in self.gpu_name.upper()
-                or "P10" in self.gpu_name.upper()
-                or "1060" in self.gpu_name
-                or "1070" in self.gpu_name
-                or "1080" in self.gpu_name
-                or "TITAN X" in self.gpu_name.upper()
-                or "TITAN V" in self.gpu_name.upper()
-                or "TITAN P" in self.gpu_name.upper()
-            ):
-                logger.info(f"Found GPU {self.gpu_name}, force to fp32")
-                self.is_half = False
-                self.use_fp32_config()
-            else:
-                logger.info(f"Found GPU {self.gpu_name}")
-            self.gpu_mem = int(
-                torch.cuda.get_device_properties(i_device).total_memory
-                / 1024
-                / 1024
-                / 1024
-                + 0.4
-            )
-            if self.gpu_mem <= 4:
-                self.preprocess_per = 3.0
+        accelerator = get_accelerator()
+        device = accelerator.device
+        if device.type != "cpu":
+            self.gpu_name = accelerator.state.device.type
+            logger.info(f"Using Accelerate device {device}")
+            if device.type != "cuda":
+                self.gpu_mem = None
         else:
-            logger.info("No supported Nvidia GPU found")
-            self.device = self.instead = "cpu"
-            self.is_half = False
-            self.use_fp32_config()
+            logger.info("Accelerate selected CPU")
+            self.instead = "cpu"
 
         if self.n_cpu == 0:
             self.n_cpu = cpu_count()
 
-        if self.is_half:
+        is_half = use_half_precision()
+        if is_half:
             # VRAM >= 6GB: use x_pad=3, x_query=10, x_center=60, x_max=65
             x_pad = 3
             x_query = 10
@@ -199,6 +160,6 @@ class Config:
         if self.instead:
             logger.info(f"Use {self.instead} instead")
         logger.info(
-            f"Half-precision floating-point: {self.is_half}, device: {self.device}"
+            f"Half-precision floating-point: {is_half}, device: {device}"
         )
         return x_pad, x_query, x_center, x_max

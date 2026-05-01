@@ -6,15 +6,14 @@ import numpy as np
 import torch
 
 from infer.lib import jit
+from lib.accelerate_utils import get_device
 
 import torch.nn as nn
 import torch.nn.functional as F
 from librosa.util import normalize, pad_center, tiny
 from scipy.signal import get_window
 
-import logging
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 HiddenArray: TypeAlias = np.ndarray
 AudioInput: TypeAlias = torch.Tensor | np.ndarray
 
@@ -570,16 +569,12 @@ class RMVPE:
         self.resample_kernel = {}
         self.is_half = is_half
         if device is None:
-            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            device = get_device()
         self.device = device
         self.model: object
         self.mel_extractor = MelSpectrogram(
             is_half, 128, 16000, 1024, 160, None, 30, 8000
         ).to(device)
-        if str(self.device) == "cuda":
-            self.device = torch.device("cuda:0")
-            device = self.device
-
         def get_jit_model() -> torch.jit.ScriptModule:
             jit_model_path = model_path.with_suffix("")
             jit_model_path = jit_model_path.with_suffix(".half.jit" if is_half else ".jit")
@@ -860,7 +855,7 @@ if __name__ == "__main__":
         audio = librosa.resample(audio, orig_sr=sampling_rate, target_sr=16000)
     model_path = Path("assets/rmvpe/rmvpe.pt")
     thred = 0.03  # 0.01
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_device()
     rmvpe = RMVPE(model_path, is_half=False, device=device)
     t0 = ttime()
     f0 = rmvpe.infer_from_audio(audio, thred=thred)

@@ -1,10 +1,11 @@
 import os
 import sys
+from pathlib import Path
 
 print("Command-line arguments:", sys.argv)
 
-now_dir = os.getcwd()
-sys.path.append(now_dir)
+now_dir = Path.cwd()
+sys.path.append(str(now_dir))
 
 import tqdm as tq
 from dotenv import load_dotenv
@@ -29,10 +30,6 @@ class InferBatchArgs(Tap):
     model_name: str
     # Retrieval index influence.
     index_rate: float = 0.66
-    # Override inference device.
-    device: str | None = None
-    # Override half precision mode.
-    is_half: bool | None = None
     # Median filter radius for extracted pitch.
     filter_radius: int = 3
     # Resample output sample rate, or 0 to keep model rate.
@@ -57,15 +54,13 @@ def main() -> None:
     from infer.modules.vc.modules import VC
 
     config = Config()
-    config.device = args.device if args.device else config.device
-    config.is_half = args.is_half if args.is_half is not None else config.is_half
     vc = VC(config)
     vc.get_vc(args.model_name)
-    audios = os.listdir(args.input_path)
-    for file in tq.tqdm(audios):
-        if file.endswith(".wav"):
-            file_path = os.path.join(args.input_path, file)
-            audio = load_audio(file_path, 16000)
+    input_path = Path(args.input_path)
+    output_path = Path(args.opt_path)
+    for file_path in tq.tqdm(sorted(input_path.iterdir())):
+        if file_path.suffix == ".wav":
+            audio = load_audio(str(file_path), 16000)
             message, wav_opt = vc.vc_single(
                 (16000, audio),
                 args.f0up_key,
@@ -78,8 +73,7 @@ def main() -> None:
             )
             if wav_opt is None:
                 raise RuntimeError(message)
-            out_path = os.path.join(args.opt_path, file)
-            wavfile.write(out_path, wav_opt[0], wav_opt[1])
+            wavfile.write(output_path / file_path.name, wav_opt[0], wav_opt[1])
 
 
 if __name__ == "__main__":

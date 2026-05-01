@@ -24,6 +24,7 @@ now_dir = os.getcwd()
 sys.path.append(now_dir)
 
 from configs.config import Config
+from lib.accelerate_utils import get_device, use_half_precision
 
 # config = Config()
 
@@ -39,8 +40,6 @@ def printt(strr, *args):
         print(strr % args)
 
 
-# config.device=torch.device("cpu")######## Force cpu testing
-# config.is_half=False######## Force cpu testing
 class RVC:
     def __init__(
         self,
@@ -63,11 +62,11 @@ class RVC:
             self.inp_q = inp_q
             self.opt_q = opt_q
             # device="cpu"######## Force cpu testing
-            self.device: str | torch.device = config.device
+            self.device: str | torch.device = get_device()
             self.f0_up_key = key
             self.n_cpu = n_cpu
             self.use_jit = self.config.use_jit
-            self.is_half = config.is_half
+            self.is_half = use_half_precision()
 
             if index_rate != 0:
                 self.index = faiss.read_index(index_path)
@@ -132,8 +131,6 @@ class RVC:
                 )
                 reload = False
                 cpt = None
-                if str(self.device) == "cuda":
-                    self.device = torch.device("cuda:0")
                 if jit_pth_path.exists():
                     cpt = jit.load(jit_pth_path)
                     model_device = cpt["device"]
@@ -239,7 +236,7 @@ class RVC:
     ) -> torch.Tensor:
         t1 = ttime()
         with torch.no_grad():
-            if self.config.is_half:
+            if use_half_precision():
                 feats = input_wav.half().view(1, -1)
             else:
                 feats = input_wav.float().view(1, -1)
@@ -263,7 +260,7 @@ class RVC:
                     npy = np.sum(
                         self.big_npy[ix] * np.expand_dims(weight, axis=2), axis=1
                     )
-                    if self.config.is_half:
+                    if use_half_precision():
                         npy = npy.astype("float16")
                     feats[0][skip_head // 2 :] = (
                         torch.from_numpy(npy).unsqueeze(0).to(self.device)

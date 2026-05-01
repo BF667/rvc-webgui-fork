@@ -251,7 +251,6 @@ def extract_f0_feature(
                 "infer/modules/train/extract/extract_f0_rmvpe.py",
                 selected_gpu,
                 str(log_dir),
-                str(shared.config.is_half),
             ]
         else:
             warning = "RMVPE GPU extraction was selected without a GPU id."
@@ -280,20 +279,16 @@ def extract_f0_feature(
         cmd = [
             shared.config.python_cmd,
             "infer/modules/train/extract_feature_print.py",
-            shared.config.device,
             selected_gpu,
             str(log_dir),
             MODEL_VERSION,
-            str(shared.config.is_half),
         ]
     else:
         cmd = [
             shared.config.python_cmd,
             "infer/modules/train/extract_feature_print.py",
-            shared.config.device,
             str(log_dir),
             MODEL_VERSION,
-            str(shared.config.is_half),
         ]
     logger.info(f"Execute: {shlex.join(cmd)}")
     p = subprocess.Popen(cmd, cwd=shared.now_dir)

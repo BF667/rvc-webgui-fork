@@ -1,79 +1,61 @@
-import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Literal
+
+now_dir = Path.cwd()
+sys.path.append(str(now_dir))
 
 from tap import Tap
 from loguru import logger
-
-BoolString = Literal["True", "False", "true", "false", "1", "0"]
-
-
-def parse_bool(value: BoolString) -> bool:
-    return value.lower() in {"true", "1"}
+from lib.accelerate_utils import get_accelerator, use_half_precision
 
 
 class ExtractFeatureCpuArgs(Tap):
-    # Requested device.
-    device: str
     # Experiment directory.
     exp_dir: Path
     # Model version.
     version: str
-    # Whether to use half precision.
-    is_half: BoolString
 
     def configure(self) -> None:
-        self.add_argument("device")
         self.add_argument("exp_dir")
         self.add_argument("version")
-        self.add_argument("is_half")
 
 
 class ExtractFeatureGpuArgs(Tap):
-    # Requested device.
-    device: str
     # GPU ID assigned to this worker.
     i_gpu: str
     # Experiment directory.
     exp_dir: Path
     # Model version.
     version: str
-    # Whether to use half precision.
-    is_half: BoolString
 
     def configure(self) -> None:
-        self.add_argument("device")
         self.add_argument("i_gpu")
         self.add_argument("exp_dir")
         self.add_argument("version")
-        self.add_argument("is_half")
 
 
 if any(arg in {"-h", "--help"} for arg in sys.argv[1:]):
     parsed_args = ExtractFeatureGpuArgs().parse_args()
-elif len(sys.argv) == 5:
+elif len(sys.argv) == 3:
     parsed_args = ExtractFeatureCpuArgs().parse_args()
-elif len(sys.argv) == 6:
+elif len(sys.argv) == 4:
     parsed_args = ExtractFeatureGpuArgs().parse_args()
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(parsed_args.i_gpu)
 else:
-    raise ValueError("Expected positional arguments: device [i_gpu] exp_dir version is_half")
+    raise ValueError("Expected positional arguments: [worker_id] exp_dir version")
 exp_dir = parsed_args.exp_dir
 version = parsed_args.version
 if version != "v2":
     raise ValueError("Only v2 feature extraction is supported.")
-is_half = parse_bool(parsed_args.is_half)
 import fairseq
 import numpy as np
 import soundfile as sf
 import torch
 import torch.nn.functional as F
 
-device = "cpu"
-if torch.cuda.is_available():
-    device = "cuda"
+accelerator = get_accelerator()
+device = accelerator.device
+is_half = use_half_precision()
 
 logger.remove()
 logger.add(
@@ -95,7 +77,7 @@ logger.add(
 
 
 logger.bind(event="feature_args", argv=sys.argv[1:]).info("Received feature extraction args")
-model_path = "assets/hubert/hubert_base.pt"
+model_path = Path("assets/hubert/hubert_base.pt")
 
 logger.info(f"Feature extraction output directory: {exp_dir}")
 wavPath = exp_dir / "1_16k_wavs"
@@ -130,7 +112,7 @@ logger.bind(
 ).info("Loading HuBERT model")
 logger.info(f"Loading HuBERT model from {model_path}")
 # if hubert model is exist
-if not os.access(model_path, os.F_OK):
+if not model_path.exists():
     logger.error(
         f"Feature extraction stopped because {model_path} does not exist. Download it from https://huggingface.co/lj1995/VoiceConversionWebUI/tree/main"
     )
@@ -142,11 +124,10 @@ from torch.serialization import safe_globals
 with safe_globals([Dictionary]):
     # torch.serialization.add_safe_globals([Dictionary])
     models, saved_cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task(
-        [model_path],
+        [str(model_path)],
         suffix="",
     )
-model = models[0]
-model = model.to(device)
+model = accelerator.prepare(models[0])
 logger.bind(
     event="ui_progress",
     detail_event="feature_model_loaded",
@@ -158,7 +139,7 @@ logger.bind(
 ).info("HuBERT model loaded")
 logger.info(f"Moved HuBERT model to {device}")
 if is_half:
-    if device != "cpu":
+    if device.type != "cpu":
         model = model.half()
 model.eval()
 
@@ -202,7 +183,7 @@ else:
                     inputs = {
                         "source": (
                             feats.half().to(device)
-                            if is_half and device != "cpu"
+                            if is_half and device.type != "cpu"
                             else feats.to(device)
                         ),
                         "padding_mask": padding_mask.to(device),

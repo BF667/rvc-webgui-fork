@@ -5,6 +5,7 @@ from fairseq import checkpoint_utils
 from configs.config import Config
 from fairseq.models.hubert.hubert import HubertModel
 import shared
+from lib.accelerate_utils import get_device, use_half_precision
 
 
 def get_index_path_from_model(sid: str) -> str:
@@ -26,8 +27,8 @@ def load_hubert(config: Config) -> HubertModel:  # hubert_model is a torch.nn.Mo
         suffix="",
     )
     hubert_model = models[0]
-    hubert_model = hubert_model.to(config.device)
-    if config.is_half:
+    hubert_model = hubert_model.to(get_device())
+    if use_half_precision():
         try:
             hubert_model = hubert_model.half()
         except Exception as e:

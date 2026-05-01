@@ -1,7 +1,6 @@
 import os
 import sys
 import traceback
-import logging
 from pathlib import Path
 from typing import Protocol, TypeAlias
 
@@ -9,8 +8,7 @@ from configs.config import Config
 from infer.lib.infer_pack.models import SynthesizerTrnMs768NSFsid
 
 import gradio as gr
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 from time import time as ttime
 from fairseq.models.hubert.hubert import (
@@ -24,9 +22,10 @@ import torch.nn.functional as F
 from scipy import signal
 
 from lib.f0 import Generator, PitchMethod
+from lib.accelerate_utils import device_string, empty_cache, use_half_precision
 
-now_dir = os.getcwd()
-sys.path.append(now_dir)
+now_dir = Path.cwd()
+sys.path.append(str(now_dir))
 
 bh, ah = signal.butter(N=5, Wn=48, btype="high", fs=16000)  # type: ignore
 
@@ -72,20 +71,20 @@ class Pipeline:
     f0_max = 1100
 
     def __init__(self, tgt_sr: int, config: Config) -> None:
-        self.x_pad, self.x_query, self.x_center, self.x_max, self.is_half = (
+        self.x_pad, self.x_query, self.x_center, self.x_max = (
             config.x_pad,
             config.x_query,
             config.x_center,
             config.x_max,
-            config.is_half,
         )
+        self.is_half = use_half_precision()
         self.t_pad: int = self.sr * self.x_pad  # Pad time around each entry
         self.t_pad_tgt: int = tgt_sr * self.x_pad
         self.t_pad2: int = self.t_pad * 2
         self.t_query: int = self.sr * self.x_query  # Query time around the query point
         self.t_center: int = self.sr * self.x_center  # Query point position
         self.t_max: int = self.sr * self.x_max  # Threshold for skipping queries
-        self.device: str = config.device
+        self.device: str = device_string()
         self.f0_gen = Generator(
             self.shared.rmvpe_root,
             self.is_half,
@@ -210,8 +209,7 @@ class Pipeline:
             audio1: np.ndarray = (net_g.infer(*arg)[0][0, 0]).data.cpu().float().numpy()
             del hasp, arg
         del feats, p_len, padding_mask
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        empty_cache()
         t2 = ttime()
         times[0] += t1 - t0
         times[2] += t2 - t1
@@ -372,8 +370,7 @@ class Pipeline:
             max_int16 /= audio_max
         audio_opt = (audio_opt * max_int16).astype(np.int16)
         del pitch, pitchf, sid_tensor
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        empty_cache()
         progress(1.0, desc="Conversion complete.")  # Final progress
 
         return audio_opt

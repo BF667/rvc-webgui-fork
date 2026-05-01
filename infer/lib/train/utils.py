@@ -317,7 +317,7 @@ def get_hparams(init=True):
         Save frequency, total epochs                    done
         bs                                    done
         pretrainG、pretrainD                  done
-        Card number: os.environ["CUDA_VISIBLE_DEVICES"]   done
+        Accelerator selection                  done
         if_latest                             done
       Model: if_f0                             done
       Sample rate: Auto-select config                  done

@@ -1,32 +1,23 @@
 import json
 import os
 import sys
+from contextlib import nullcontext
 from pathlib import Path
-from contextlib import contextmanager
-from typing import Generator
 
-now_dir = os.getcwd()
-sys.path.append(os.path.join(now_dir))
+now_dir = Path.cwd()
+sys.path.append(str(now_dir))
 
 import datetime
 
 from infer.lib.train import utils
 from loguru import logger
+from lib.accelerate_utils import get_accelerator, use_half_precision
 
 hps = utils.get_hparams()
 selected_gpu = hps.gpus.split("-")[0] if hps.gpus else ""
-if selected_gpu:
-    os.environ["CUDA_VISIBLE_DEVICES"] = selected_gpu
 from random import shuffle
 
 import torch
-
-
-@contextmanager
-def cuda_autocast(enabled: bool) -> Generator[None, None, None]:
-    with torch.amp.autocast("cuda", enabled=enabled):  # type: ignore[bad-context-manager]
-        yield
-
 
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
@@ -112,8 +103,9 @@ def run(hps, training_logger):
     ).info("Preparing training setup")
     utils.check_git_hash(hps.model_dir)
     torch.manual_seed(hps.train.seed)
-    if torch.cuda.is_available():
-        torch.cuda.set_device(0)
+    accelerator = get_accelerator()
+    use_fp16 = use_half_precision()
+    training_logger.info(f"Accelerate selected device: {accelerator.device}")
 
     train_dataset = TextAudioLoaderMultiNSFsid(hps.data.training_files, hps.data)
     # It is possible that dataloader's workers are out of shared memory. Please try to raise your shared memory limit.
@@ -123,7 +115,7 @@ def run(hps, training_logger):
         train_dataset,
         num_workers=4,
         shuffle=True,
-        pin_memory=True,
+        pin_memory=accelerator.device.type != "cpu",
         collate_fn=collate_fn,
         batch_size=hps.train.batch_size,
         persistent_workers=True,
@@ -133,14 +125,10 @@ def run(hps, training_logger):
         hps.data.filter_length // 2 + 1,
         hps.train.segment_size // hps.data.hop_length,
         **hps.model,
-        is_half=hps.train.fp16_run,
+        is_half=use_fp16,
         sr=hps.sample_rate,
     )
-    if torch.cuda.is_available():
-        net_g = net_g.cuda(0)
     net_d = MultiPeriodDiscriminator(hps.model.use_spectral_norm)
-    if torch.cuda.is_available():
-        net_d = net_d.cuda(0)
     optim_g = torch.optim.AdamW(
         net_g.parameters(),
         hps.train.learning_rate,
@@ -195,7 +183,17 @@ def run(hps, training_logger):
         optim_d, gamma=hps.train.lr_decay, last_epoch=epoch_str - 2
     )
 
-    scaler = torch.amp.GradScaler("cuda", enabled=hps.train.fp16_run)
+    net_g, net_d, optim_g, optim_d, train_loader, scheduler_g, scheduler_d = (
+        accelerator.prepare(
+            net_g,
+            net_d,
+            optim_g,
+            optim_d,
+            train_loader,
+            scheduler_g,
+            scheduler_d,
+        )
+    )
 
     target_total_epoch = int(hps.total_epoch)
     if epoch_str > target_total_epoch:
@@ -213,7 +211,7 @@ def run(hps, training_logger):
             [net_g, net_d],
             [optim_g, optim_d],
             [scheduler_g, scheduler_d],
-            scaler,
+            accelerator,
             [train_loader, None],
             training_logger,
             None,
@@ -228,7 +226,7 @@ def train_and_evaluate(
     nets,
     optims,
     schedulers,
-    scaler,
+    accelerator,
     loaders,
     logger,
     writers,
@@ -266,17 +264,6 @@ def train_and_evaluate(
                     wave_lengths,
                     sid,
                 ) = info
-                # Load on CUDA
-                if torch.cuda.is_available():
-                    phone = phone.cuda(rank, non_blocking=True)
-                    phone_lengths = phone_lengths.cuda(rank, non_blocking=True)
-                    pitch = pitch.cuda(rank, non_blocking=True)
-                    pitchf = pitchf.cuda(rank, non_blocking=True)
-                    sid = sid.cuda(rank, non_blocking=True)
-                    spec = spec.cuda(rank, non_blocking=True)
-                    spec_lengths = spec_lengths.cuda(rank, non_blocking=True)
-                    wave = wave.cuda(rank, non_blocking=True)
-                    wave_lengths = wave_lengths.cuda(rank, non_blocking=True)
                 # Cache on list
                 cache.append(
                     (
@@ -317,20 +304,9 @@ def train_and_evaluate(
             wave_lengths,
             sid,
         ) = info
-        ## Load on CUDA
-        if (hps.if_cache_data_in_gpu == False) and torch.cuda.is_available():
-            phone = phone.cuda(rank, non_blocking=True)
-            phone_lengths = phone_lengths.cuda(rank, non_blocking=True)
-            pitch = pitch.cuda(rank, non_blocking=True)
-            pitchf = pitchf.cuda(rank, non_blocking=True)
-            sid = sid.cuda(rank, non_blocking=True)
-            spec = spec.cuda(rank, non_blocking=True)
-            spec_lengths = spec_lengths.cuda(rank, non_blocking=True)
-            wave = wave.cuda(rank, non_blocking=True)
-            # wave_lengths = wave_lengths.cuda(rank, non_blocking=True)
 
         # Calculate
-        with cuda_autocast(hps.train.fp16_run):
+        with accelerator.autocast():
             (
                 y_hat,
                 ids_slice,
@@ -349,7 +325,7 @@ def train_and_evaluate(
             y_mel = commons.slice_segments(
                 mel, ids_slice, hps.train.segment_size // hps.data.hop_length
             )
-            with cuda_autocast(False):
+            with nullcontext():
                 y_hat_mel = mel_spectrogram_torch(
                     y_hat.float().squeeze(1),
                     hps.data.filter_length,
@@ -360,7 +336,7 @@ def train_and_evaluate(
                     hps.data.mel_fmin,
                     hps.data.mel_fmax,
                 )
-            if hps.train.fp16_run == True:
+            if use_half_precision():
                 y_hat_mel = y_hat_mel.half()
             wave = commons.slice_segments(
                 wave, ids_slice * hps.data.hop_length, hps.train.segment_size
@@ -368,36 +344,31 @@ def train_and_evaluate(
 
             # Discriminator
             y_d_hat_r, y_d_hat_g, _, _ = net_d(wave, y_hat.detach())
-            with cuda_autocast(False):
+            with nullcontext():
                 loss_disc, losses_disc_r, losses_disc_g = discriminator_loss(
                     y_d_hat_r, y_d_hat_g
                 )
         optim_d.zero_grad()
-        scaler.scale(loss_disc).backward()
-        scaler.unscale_(optim_d)
+        accelerator.backward(loss_disc)
         grad_norm_d = commons.clip_grad_value_(net_d.parameters(), None)
-        scale_before_step = scaler.get_scale()
-        scaler.step(optim_d)
+        optim_d.step()
 
-        with cuda_autocast(hps.train.fp16_run):
+        with accelerator.autocast():
             # Generator
             y_d_hat_r, y_d_hat_g, fmap_r, fmap_g = net_d(wave, y_hat)
-            with cuda_autocast(False):
+            with nullcontext():
                 loss_mel = F.l1_loss(y_mel, y_hat_mel) * hps.train.c_mel
                 loss_kl = kl_loss(z_p, logs_q, m_p, logs_p, z_mask) * hps.train.c_kl
                 loss_fm = feature_loss(fmap_r, fmap_g)
                 loss_gen, losses_gen = generator_loss(y_d_hat_g)
                 loss_gen_all = loss_gen + loss_fm + loss_mel + loss_kl
         optim_g.zero_grad()
-        scaler.scale(loss_gen_all).backward()
-        scaler.unscale_(optim_g)
+        accelerator.backward(loss_gen_all)
         grad_norm_g = commons.clip_grad_value_(net_g.parameters(), None)
-        scaler.step(optim_g)
-        scaler.update()
+        optim_g.step()
 
-        if scaler.get_scale() >= scale_before_step:
-            schedulers[1].step()
-            schedulers[0].step()
+        schedulers[1].step()
+        schedulers[0].step()
 
         if global_step % hps.train.log_interval == 0:
             lr = float(optim_g.param_groups[0]["lr"])
@@ -454,38 +425,40 @@ def train_and_evaluate(
 
     if epoch % hps.save_every_epoch == 0:
         model_dir = hps.model_dir
+        unwrapped_net_g = accelerator.unwrap_model(net_g)
+        unwrapped_net_d = accelerator.unwrap_model(net_d)
         if hps.if_latest == 0:
             utils.save_checkpoint(
-                net_g,
+                unwrapped_net_g,
                 optim_g,
                 hps.train.learning_rate,
                 epoch,
-                model_dir / "G_{}.pth".format(global_step),
+                model_dir / f"G_{global_step}.pth",
             )
             utils.save_checkpoint(
-                net_d,
+                unwrapped_net_d,
                 optim_d,
                 hps.train.learning_rate,
                 epoch,
-                model_dir / "D_{}.pth".format(global_step),
+                model_dir / f"D_{global_step}.pth",
             )
         else:
             utils.save_checkpoint(
-                net_g,
+                unwrapped_net_g,
                 optim_g,
                 hps.train.learning_rate,
                 epoch,
-                model_dir / "G_{}.pth".format(2333333),
+                model_dir / f"G_{2333333}.pth",
             )
             utils.save_checkpoint(
-                net_d,
+                unwrapped_net_d,
                 optim_d,
                 hps.train.learning_rate,
                 epoch,
-                model_dir / "D_{}.pth".format(2333333),
+                model_dir / f"D_{2333333}.pth",
             )
         if hps.save_every_weights == "1":
-            ckpt = net_g.state_dict()
+            ckpt = unwrapped_net_g.state_dict()
             saved_path = savee(
                 ckpt,
                 hps.sample_rate,
@@ -512,7 +485,7 @@ def train_and_evaluate(
     if epoch >= hps.total_epoch:
         logger.info("Training is done. The program is closed.")
 
-        ckpt = net_g.state_dict()
+        ckpt = accelerator.unwrap_model(net_g).state_dict()
         final_path = savee(
             ckpt, hps.sample_rate, hps.if_f0, hps.name, epoch, hps.version, hps
         )

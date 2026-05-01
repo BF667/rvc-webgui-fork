@@ -60,9 +60,6 @@ def synthesizer_jit_export(
         save_path = stem.with_suffix(".half.jit" if is_half else ".jit")
     else:
         save_path = Path(save_path)
-    if "cuda" in str(device) and ":" not in str(device):
-        device = torch.device("cuda:0")
-
     model, cpt = load_synthesizer(model_path, device)
     model.forward = model.infer
     inputs: dict[str, torch.Tensor] | None = None

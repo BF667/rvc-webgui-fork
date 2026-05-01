@@ -1,0 +1,33 @@
+from functools import lru_cache
+from typing import Any
+
+import torch
+from accelerate import Accelerator
+
+
+@lru_cache(maxsize=1)
+def get_accelerator() -> Accelerator:
+    return Accelerator()
+
+
+def get_device() -> torch.device:
+    return get_accelerator().device
+
+
+def device_string() -> str:
+    return str(get_device())
+
+
+def use_half_precision() -> bool:
+    accelerator = get_accelerator()
+    return accelerator.device.type != "cpu" and accelerator.mixed_precision == "fp16"
+
+
+def move_to_device(value: Any, *, non_blocking: bool = False) -> Any:
+    if hasattr(value, "to"):
+        return value.to(get_device(), non_blocking=non_blocking)
+    return value
+
+
+def empty_cache() -> None:
+    get_accelerator().free_memory()

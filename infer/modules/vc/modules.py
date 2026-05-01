@@ -1,10 +1,10 @@
 from lib.f0 import PitchMethod
 import traceback
-import logging
 from pathlib import Path
 from typing import cast
 import gradio as gr
 import resampy
+from loguru import logger
 
 from configs.config import Config
 from lib.types import (
@@ -14,7 +14,6 @@ from lib.types import (
     synthesizer_target_sr,
 )
 
-logger = logging.getLogger(__name__)
 import numpy as np
 import torch
 from infer.lib.infer_pack.models import (
@@ -22,6 +21,7 @@ from infer.lib.infer_pack.models import (
 )
 from infer.modules.vc.pipeline import Pipeline
 from infer.modules.vc.utils import *
+from lib.accelerate_utils import empty_cache, get_device, use_half_precision
 
 
 def resample_audio(
@@ -70,10 +70,10 @@ class VC:
         self.audio_buffer = np.array([], dtype=np.float32)
         # Pitch cache for continuity between chunks
         self.cache_pitch: torch.Tensor = torch.zeros(1, 256, dtype=torch.long).to(
-            self.config.device
+            get_device()
         )
         self.cache_pitchf: torch.Tensor = torch.zeros(1, 256, dtype=torch.float32).to(
-            self.config.device
+            get_device()
         )
 
     def get_vc(self: "VC", sid: str | None, *to_return_protect):
@@ -99,8 +99,7 @@ class VC:
                 self.hubert_model = self.net_g = self.n_spk = self.hubert_model = (
                     self.tgt_sr
                 ) = None
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                empty_cache()
                 # You just have to follow this instruction to clear it.
                 cpt = self.cpt
                 if cpt is not None:
@@ -108,12 +107,11 @@ class VC:
                     if self.version == "v2" and cpt.get("f0", 1) == 1:
                         self.net_g = SynthesizerTrnMs768NSFsid(
                             *synthesizer_config_args_with_sr(cpt["config"]),
-                            is_half=self.config.is_half,
+                            is_half=use_half_precision(),
                         )
                 self.net_g = None
                 self.cpt = None
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                empty_cache()
             return (
                 {
                     "visible": True,
@@ -137,14 +135,14 @@ class VC:
 
         self.net_g = SynthesizerTrnMs768NSFsid(
             *synthesizer_config_args_with_sr(self.cpt["config"]),
-            is_half=self.config.is_half,
+            is_half=use_half_precision(),
         )
 
         del self.net_g.enc_q
 
         self.net_g.load_state_dict(self.cpt["weight"], strict=False)
-        self.net_g.eval().to(self.config.device)
-        if self.config.is_half:
+        self.net_g.eval().to(get_device())
+        if use_half_precision():
             try:
                 self.net_g = self.net_g.half()
             except Exception as e:

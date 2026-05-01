@@ -2,45 +2,35 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Literal
 
 from tap import Tap
 from loguru import logger
 
-now_dir = os.getcwd()
-sys.path.append(now_dir)
+now_dir = Path.cwd()
+sys.path.append(str(now_dir))
 
 import numpy as np
 
 from infer.lib.audio import load_audio
 from lib.f0 import Generator
-
-BoolString = Literal["True", "False", "true", "false", "1", "0"]
-
-
-def parse_bool(value: BoolString) -> bool:
-    return value.lower() in {"true", "1"}
-
+from lib.accelerate_utils import device_string, get_accelerator, use_half_precision
 
 class ExtractF0RmvpeArgs(Tap):
     # GPU ID assigned to this worker.
     i_gpu: str
     # Experiment directory.
     exp_dir: Path
-    # Whether to use half precision.
-    is_half: BoolString
 
     def configure(self) -> None:
         self.add_argument("i_gpu")
         self.add_argument("exp_dir")
-        self.add_argument("is_half")
 
 
 args = ExtractF0RmvpeArgs().parse_args()
 i_gpu = args.i_gpu
-os.environ["CUDA_VISIBLE_DEVICES"] = str(i_gpu)
 exp_dir = args.exp_dir
-is_half = parse_bool(args.is_half)
+accelerator = get_accelerator()
+is_half = use_half_precision()
 logger.remove()
 logger.add(
     exp_dir / "extract_f0_feature.log",
@@ -78,7 +68,7 @@ class FeatureInput:
             Path("assets/rmvpe"),
             is_half,
             0,
-            device="cuda",
+            device=device_string(),
             window=self.hop,
             sr=self.fs,
         )
@@ -113,10 +103,9 @@ class FeatureInput:
                         file=inp_path,
                         gpu=i_gpu,
                     ).info(f"Starting RMVPE f0 for {Path(inp_path).name}")
-                    skipped = (
-                        os.path.exists(opt_path1 + ".npy")
-                        and os.path.exists(opt_path2 + ".npy")
-                    )
+                    skipped = Path(f"{opt_path1}.npy").exists() and Path(
+                        f"{opt_path2}.npy"
+                    ).exists()
                     if not skipped:
                         audio = load_audio(inp_path, self.fs)
                         p_len = audio.shape[0] // self.hop

@@ -55,6 +55,7 @@ import torch
 from configs.config import Config
 from i18n.i18n import I18nAuto
 from infer.modules.vc.modules import VC
+from lib.accelerate_utils import get_accelerator
 
 now_dir = Path.cwd()
 tmp = now_dir / "TEMP"
@@ -75,56 +76,17 @@ vc = VC(config)
 
 i18n = I18nAuto()
 logger.info(f"Use Language: {i18n}")
-# Get GPU count
-ngpu = torch.cuda.device_count()
+accelerator = get_accelerator()
 gpu_infos: list[str] = []
 mem: list[int] = []
 if_gpu_ok: bool = False
 
-if torch.cuda.is_available() or ngpu != 0:
-    for i in range(ngpu):
-        gpu_name = torch.cuda.get_device_name(i)
-        if any(
-            value in gpu_name.upper()
-            for value in [
-                "10",
-                "16",
-                "20",
-                "30",
-                "40",
-                "A2",
-                "A3",
-                "A4",
-                "P4",
-                "A50",
-                "500",
-                "A60",
-                "70",
-                "80",
-                "90",
-                "M4",
-                "T4",
-                "TITAN",
-                "4060",
-                "L",
-                "6000",
-            ]
-        ):
-            # At least one usable NVIDIA GPU
-            if_gpu_ok = True
-            gpu_infos.append("%s\t%s" % (i, gpu_name))
-            mem.append(
-                int(
-                    torch.cuda.get_device_properties(i).total_memory
-                    / 1024
-                    / 1024
-                    / 1024
-                    + 0.4
-                )
-            )
+if accelerator.device.type != "cpu":
+    if_gpu_ok = True
+    gpu_infos.append(f"0\tAccelerate {accelerator.device}")
 if if_gpu_ok and len(gpu_infos) > 0:
     gpu_info = "\n".join(gpu_infos)
-    default_batch_size = min(mem) // 2
+    default_batch_size = max(min(mem) // 2, 1) if mem else 1
 else:
     gpu_info = i18n(
         "Unfortunately, you don't have a usable graphics card to support your training."

@@ -1,8 +1,8 @@
-import os
 import sys
+from pathlib import Path
 
-now_dir = os.getcwd()
-sys.path.append(now_dir)
+now_dir = Path.cwd()
+sys.path.append(str(now_dir))
 from dotenv import load_dotenv
 from scipy.io import wavfile
 from tap import Tap
@@ -30,10 +30,6 @@ class InferArgs(Tap):
     model_name: str
     # Retrieval index influence.
     index_rate: float = 0.66
-    # Override inference device.
-    device: str | None = None
-    # Override half precision mode.
-    is_half: bool | None = None
     # Median filter radius for extracted pitch.
     filter_radius: int = 3
     # Resample output sample rate, or 0 to keep model rate.
@@ -58,11 +54,11 @@ def main() -> None:
     from infer.modules.vc.modules import VC
 
     config = Config()
-    config.device = args.device if args.device else config.device
-    config.is_half = args.is_half if args.is_half is not None else config.is_half
     vc = VC(config)
     vc.get_vc(args.model_name)
-    audio = load_audio(args.input_path, 16000)
+    input_path = Path(args.input_path)
+    output_path = Path(args.opt_path)
+    audio = load_audio(str(input_path), 16000)
     message, wav_opt = vc.vc_single(
         (16000, audio),
         args.f0up_key,
@@ -75,7 +71,7 @@ def main() -> None:
     )
     if wav_opt is None:
         raise RuntimeError(message)
-    wavfile.write(args.opt_path, wav_opt[0], wav_opt[1])
+    wavfile.write(output_path, wav_opt[0], wav_opt[1])
 
 
 if __name__ == "__main__":

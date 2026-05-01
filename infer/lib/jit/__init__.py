@@ -146,8 +146,6 @@ def rmvpe_jit_export(
     if not save_path:
         save_path = model_path.with_suffix("")
         save_path = save_path.with_suffix(".half.jit" if is_half else ".jit")
-    if "cuda" in str(device) and ":" not in str(device):
-        device = torch.device("cuda:0")
     from .get_rmvpe import get_rmvpe
 
     model = get_rmvpe(model_path, device)
@@ -172,8 +170,6 @@ def synthesizer_jit_export(
     if not save_path:
         save_path = model_path.with_suffix("")
         save_path = save_path.with_suffix(".half.jit" if is_half else ".jit")
-    if "cuda" in str(device) and ":" not in str(device):
-        device = torch.device("cuda:0")
     from .get_synthesizer import get_synthesizer
 
     model, cpt = get_synthesizer(model_path, device)
