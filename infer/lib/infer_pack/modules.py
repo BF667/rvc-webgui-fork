@@ -34,7 +34,7 @@ class LayerNorm(nn.Module):
         self.gamma = nn.Parameter(torch.ones(channels))
         self.beta = nn.Parameter(torch.zeros(channels))
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.transpose(1, -1)
         x = F.layer_norm(x, (self.channels,), self.gamma, self.beta, self.eps)
         return x.transpose(1, -1)
@@ -83,7 +83,7 @@ class ConvReluNorm(nn.Module):
         assert self.proj.bias is not None
         self.proj.bias.data.zero_()
 
-    def forward(self, x, x_mask):
+    def forward(self, x: torch.Tensor, x_mask: torch.Tensor) -> torch.Tensor:
         x_org = x
         for i in range(self.n_layers):
             x = self.conv_layers[i](x * x_mask)
@@ -127,7 +127,7 @@ class DDSConv(nn.Module):
             self.norms_1.append(LayerNorm(channels))
             self.norms_2.append(LayerNorm(channels))
 
-    def forward(self, x, x_mask, g: torch.Tensor | None = None):
+    def forward(self, x: torch.Tensor, x_mask: torch.Tensor, g: torch.Tensor | None = None) -> torch.Tensor:
         if g is not None:
             x = x + g
         for i in range(self.n_layers):
@@ -225,7 +225,7 @@ class WN(torch.nn.Module):
                 output = output + res_skip_acts
         return output * x_mask
 
-    def remove_weight_norm(self):
+    def remove_weight_norm(self) -> None:
         if self.gin_channels != 0:
             torch.nn.utils.remove_weight_norm(self.cond_layer)
         for l in self.in_layers:
@@ -233,7 +233,7 @@ class WN(torch.nn.Module):
         for l in self.res_skip_layers:
             torch.nn.utils.remove_weight_norm(l)
 
-    def __prepare_scriptable__(self):
+    def __prepare_scriptable__(self) -> "WN":
         if self.gin_channels != 0:
             for hook in self.cond_layer._forward_pre_hooks.values():
                 if (
@@ -334,7 +334,7 @@ class ResBlock1(torch.nn.Module):
         self.convs2.apply(init_weights)
         self.lrelu_slope = LRELU_SLOPE
 
-    def forward(self, x: torch.Tensor, x_mask: torch.Tensor | None = None):
+    def forward(self, x: torch.Tensor, x_mask: torch.Tensor | None = None) -> torch.Tensor:
         for c1, c2 in zip(self.convs1, self.convs2):
             xt = F.leaky_relu(x, self.lrelu_slope)
             if x_mask is not None:
@@ -349,13 +349,13 @@ class ResBlock1(torch.nn.Module):
             x = x * x_mask
         return x
 
-    def remove_weight_norm(self):
+    def remove_weight_norm(self) -> None:
         for l in self.convs1:
             remove_weight_norm(l)
         for l in self.convs2:
             remove_weight_norm(l)
 
-    def __prepare_scriptable__(self):
+    def __prepare_scriptable__(self) -> "ResBlock1":
         for l in self.convs1:
             for hook in l._forward_pre_hooks.values():
                 if (
@@ -403,7 +403,7 @@ class ResBlock2(torch.nn.Module):
         self.convs.apply(init_weights)
         self.lrelu_slope = LRELU_SLOPE
 
-    def forward(self, x, x_mask: torch.Tensor | None = None):
+    def forward(self, x: torch.Tensor, x_mask: torch.Tensor | None = None) -> torch.Tensor:
         for c in self.convs:
             xt = F.leaky_relu(x, self.lrelu_slope)
             if x_mask is not None:
@@ -414,11 +414,11 @@ class ResBlock2(torch.nn.Module):
             x = x * x_mask
         return x
 
-    def remove_weight_norm(self):
+    def remove_weight_norm(self) -> None:
         for l in self.convs:
             remove_weight_norm(l)
 
-    def __prepare_scriptable__(self):
+    def __prepare_scriptable__(self) -> "ResBlock2":
         for l in self.convs:
             for hook in l._forward_pre_hooks.values():
                 if (
@@ -525,7 +525,7 @@ class ResidualCouplingLayer(nn.Module):
         x_mask: torch.Tensor,
         g: torch.Tensor | None = None,
         reverse: bool = False,
-    ):
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         x0, x1 = torch.split(x, [self.half_channels] * 2, 1)
         h = self.pre(x0) * x_mask
         h = self.enc(h, x_mask, g=g)
@@ -546,10 +546,10 @@ class ResidualCouplingLayer(nn.Module):
             x = torch.cat([x0, x1], 1)
             return x, torch.zeros([1])
 
-    def remove_weight_norm(self):
+    def remove_weight_norm(self) -> None:
         self.enc.remove_weight_norm()
 
-    def __prepare_scriptable__(self):
+    def __prepare_scriptable__(self) -> "ResidualCouplingLayer":
         for hook in self.enc._forward_pre_hooks.values():
             if (
                 hook.__module__ == "torch.nn.utils.weight_norm"
@@ -592,8 +592,8 @@ class ConvFlow(nn.Module):
         x: torch.Tensor,
         x_mask: torch.Tensor,
         g: torch.Tensor | None = None,
-        reverse=False,
-    ):
+        reverse: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor] | torch.Tensor:
         x0, x1 = torch.split(x, [self.half_channels] * 2, 1)
         h = self.pre(x0)
         h = self.convs(h, x_mask, g=g)
