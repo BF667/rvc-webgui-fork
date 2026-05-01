@@ -388,15 +388,23 @@ def get_logger(model_dir: str, filename: str = "train.log", *, stdout: bool = Fa
             sys.stdout,
             level="INFO",
             serialize=True,
-            enqueue=True,
+            enqueue=False,
             backtrace=False,
             diagnose=False,
         )
     logger.add(
+        sys.stderr,
+        level="INFO",
+        serialize=False,
+        enqueue=False,
+        backtrace=False,
+        diagnose=False,
+    )
+    logger.add(
         log_path,
         level="INFO",
         serialize=True,
-        enqueue=True,
+        enqueue=False,
         backtrace=False,
         diagnose=False,
     )

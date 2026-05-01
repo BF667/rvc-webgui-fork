@@ -87,6 +87,14 @@ logger.add(
     backtrace=False,
     diagnose=False,
 )
+logger.add(
+    sys.stderr,
+    level="INFO",
+    serialize=False,
+    enqueue=False,
+    backtrace=False,
+    diagnose=False,
+)
 
 
 logger.bind(event="feature_args", argv=sys.argv[1:]).info("Received feature extraction args")

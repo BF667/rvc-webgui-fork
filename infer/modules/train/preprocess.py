@@ -60,7 +60,15 @@ logger.add(
     exp_dir / "preprocess.log",
     level="INFO",
     serialize=True,
-    enqueue=True,
+    enqueue=False,
+    backtrace=False,
+    diagnose=False,
+)
+logger.add(
+    sys.stderr,
+    level="INFO",
+    serialize=False,
+    enqueue=False,
     backtrace=False,
     diagnose=False,
 )

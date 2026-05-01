@@ -114,6 +114,10 @@ def get_latest_ui_progress(records: list[dict[str, Any]]) -> tuple[float, str]:
     return fraction, str(stage) if stage is not None else "Working..."
 
 
+def is_skip_update(value: object) -> bool:
+    return value == {"__type__": "update"}
+
+
 def preprocess_dataset(
     audio_dir: str | pathlib.Path,
     exp_dir: str,
@@ -677,14 +681,22 @@ def one_click_training(
     progress = gr.Progress()
     progress(0.0, desc=shared.i18n("step1: processing data..."))
     for update in preprocess_dataset(trainset_dir4, exp_dir1, sr2, np7):
-        final_sections.append(update)
+        if not is_skip_update(update):
+            final_sections.append(str(update))
 
     # step2a: Extract pitch
     progress(0.0, desc=shared.i18n("step2: extracting feature & pitch"))
     for update in extract_f0_feature(
-        gpus16, np7, f0method8, if_f0_3, exp_dir1, version19, gpus_rmvpe
+        gpus16,
+        np7,
+        f0method8,
+        if_f0_3,
+        exp_dir1,
+        version19,
+        gpus_rmvpe,
     ):
-        final_sections.append(update)
+        if not is_skip_update(update):
+            final_sections.append(str(update))
 
     # step3a: Train model
     progress(0.0, desc=shared.i18n("step3a: Training model"))
@@ -704,7 +716,8 @@ def one_click_training(
         if_save_every_weights18,
         version19,
     ):
-        final_sections.append(update)
+        if not is_skip_update(update):
+            final_sections.append(str(update))
     final_sections.append(
         i18n("Training finished, you can view the console training log or train.log in the experiment folder")
     )

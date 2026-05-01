@@ -40,6 +40,14 @@ logger.add(
     backtrace=False,
     diagnose=False,
 )
+logger.add(
+    sys.stderr,
+    level="INFO",
+    serialize=False,
+    enqueue=False,
+    backtrace=False,
+    diagnose=False,
+)
 
 
 n_p = args.n_p
