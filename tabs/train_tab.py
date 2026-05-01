@@ -320,7 +320,6 @@ def click_train(
     if_save_latest13: str,
     pretrained_G14: str,
     pretrained_D15: str,
-    gpus16: str,
     if_cache_gpu17: str,
     if_save_every_weights18: str,
     progress: gr.Progress = gr.Progress(),
@@ -388,7 +387,7 @@ def click_train(
     with open(exp_dir / "filelist.txt", "w") as f:
         f.write("\n".join(opt))
     logger.debug("Write filelist done")
-    logger.info(f"Using GPU setting: {gpus16}")
+    logger.info("Training device is managed by Hugging Face Accelerate")
     if pretrained_G14 == "":
         logger.info("No pretrained Generator")
     if pretrained_D15 == "":
@@ -405,11 +404,6 @@ def click_train(
                 sort_keys=True,
             )
             f.write("\n")
-    selected_gpu = gpus16.split("-")[0] if gpus16 else ""
-    if gpus16 and "-" in gpus16:
-        logger.warning(
-            f"Multiple GPU ids were provided for training ({gpus16}); using only {selected_gpu} to avoid subprocess races."
-        )
     cmd = [
         shared.config.python_cmd,
         "infer/modules/train/train.py",
@@ -434,8 +428,6 @@ def click_train(
         "-v",
         MODEL_VERSION,
     ]
-    if selected_gpu:
-        cmd.extend(["-g", selected_gpu])
     if pretrained_G14 != "":
         cmd.extend(["-pg", pretrained_G14])
     if pretrained_D15 != "":
@@ -584,7 +576,7 @@ def one_click_training(
     if_save_latest13: str,
     pretrained_G14: str,
     pretrained_D15: str,
-    gpus16: str,
+    feature_gpus: str,
     if_cache_gpu17: str,
     if_save_every_weights18: str,
     gpus_rmvpe: str,
@@ -601,7 +593,7 @@ def one_click_training(
     # step2a: Extract pitch
     progress(0.0, desc=shared.i18n("step2: extracting feature & pitch"))
     for update in extract_f0_feature(
-        gpus16,
+        feature_gpus,
         np7,
         f0method8,
         exp_dir1,
@@ -622,7 +614,6 @@ def one_click_training(
         if_save_latest13,
         pretrained_G14,
         pretrained_D15,
-        gpus16,
         if_cache_gpu17,
         if_save_every_weights18,
     ):
@@ -787,7 +778,7 @@ def create_train_tab() -> None:
                     minimum=1,
                     maximum=40,
                     step=1,
-                    label=i18n("Batch Size per GPU"),
+                    label=i18n("Batch Size"),
                     value=shared.default_batch_size,
                     interactive=True,
                 )
@@ -825,13 +816,6 @@ def create_train_tab() -> None:
                     [target_sr],
                     [pretrained_G14, pretrained_D15],
                 )
-                gpus16 = gr.Textbox(
-                    label=i18n(
-                        "Enter card numbers separated by '-', e.g., 0-1-2 to use card 0, card 1, and card 2"
-                    ),
-                    value=shared.gpus,
-                    interactive=True,
-                )
                 train_btn = gr.Button(i18n("Train"), variant="primary")
                 index_btn = gr.Button(i18n("Extra Feature Index"), variant="primary")
                 one_click_btn = gr.Button(i18n("Train Everything"), variant="primary")
@@ -849,7 +833,6 @@ def create_train_tab() -> None:
                         if_save_latest13,
                         pretrained_G14,
                         pretrained_D15,
-                        gpus16,
                         if_cache_gpu17,
                         if_save_every_weights18,
                     ],
@@ -872,7 +855,7 @@ def create_train_tab() -> None:
                         if_save_latest13,
                         pretrained_G14,
                         pretrained_D15,
-                        gpus16,
+                        gpus6,
                         if_cache_gpu17,
                         if_save_every_weights18,
                         gpus_rmvpe,

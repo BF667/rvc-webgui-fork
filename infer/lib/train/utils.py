@@ -1,21 +1,21 @@
-import json
 import os
 import subprocess
 import sys
 import shutil
 from collections.abc import Mapping
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from scipy.io.wavfile import read
 from tap import Tap
 from loguru import logger
 
-from lib.json_validation import TrainingConfig
+from lib.json_validation import ModelVersion, SampleRateName, TrainingConfig
 
 # MATPLOTLIB_FLAG = False
 
@@ -29,31 +29,28 @@ class TrainArgs(Tap):
     pretrainG: str = ""
     # Pretrained discriminator path.
     pretrainD: str = ""
-    # GPU IDs split by hyphen.
-    gpus: str = "0"
     # Training batch size.
     batch_size: int
     # Experiment directory name under logs.
     experiment_dir: str
     # Sample rate, such as 32k, 40k, or 48k.
-    sample_rate: str
+    sample_rate: SampleRateName
     # Save extracted model weights when saving checkpoints.
-    save_every_weights: str = "0"
+    save_every_weights: Literal["0", "1"] = "0"
     # Model version.
-    version: str
+    version: ModelVersion
     # Whether to use f0 as an input, 1 or 0.
-    if_f0: int
+    if_f0: Literal[0, 1]
     # Whether to save only the latest G/D pth files, 1 or 0.
-    if_latest: int
+    if_latest: Literal[0, 1]
     # Whether to cache the dataset in GPU memory, 1 or 0.
-    if_cache_data_in_gpu: int
+    if_cache_data_in_gpu: Literal[0, 1]
 
     def configure(self) -> None:
         self.add_argument("-se", "--save_every_epoch")
         self.add_argument("-te", "--total_epoch")
         self.add_argument("-pg", "--pretrainG")
         self.add_argument("-pd", "--pretrainD")
-        self.add_argument("-g", "--gpus")
         self.add_argument("-bs", "--batch_size")
         self.add_argument("-e", "--experiment_dir")
         self.add_argument("-sr", "--sample_rate")
@@ -335,47 +332,36 @@ def get_hparams(init=True):
     experiment_dir = Path("./logs") / args.experiment_dir
 
     config_save_path = experiment_dir / "config.json"
-    with open(config_save_path, "r") as f:
-        config = TrainingConfig.model_validate(json.load(f))
-
-    hparams = HParams.from_training_config(config)
-    hparams.model_dir = experiment_dir
-    hparams.experiment_dir = experiment_dir
-    hparams.save_every_epoch = args.save_every_epoch
-    hparams.name = name
-    hparams.total_epoch = args.total_epoch
-    hparams.pretrainG = args.pretrainG
-    hparams.pretrainD = args.pretrainD
-    hparams.version = args.version
-    hparams.gpus = args.gpus
-    hparams.train.batch_size = args.batch_size
-    hparams.sample_rate = args.sample_rate
-    hparams.if_f0 = args.if_f0
-    hparams.if_latest = args.if_latest
-    hparams.save_every_weights = args.save_every_weights
-    hparams.if_cache_data_in_gpu = args.if_cache_data_in_gpu
-    hparams.data.training_files = experiment_dir / "filelist.txt"
-    return hparams
+    config = HParamsConfig.model_validate_json(config_save_path.read_text())
+    runtime = HParamsRuntimeOverrides(
+        model_dir=experiment_dir,
+        experiment_dir=experiment_dir,
+        save_every_epoch=args.save_every_epoch,
+        name=name,
+        total_epoch=args.total_epoch,
+        pretrainG=args.pretrainG,
+        pretrainD=args.pretrainD,
+        version=args.version,
+        batch_size=args.batch_size,
+        sample_rate=args.sample_rate,
+        if_f0=args.if_f0,
+        if_latest=args.if_latest,
+        save_every_weights=args.save_every_weights,
+        if_cache_data_in_gpu=args.if_cache_data_in_gpu,
+        training_files=experiment_dir / "filelist.txt",
+    )
+    return HParams.from_config(config, runtime)
 
 
 def get_hparams_from_dir(model_dir: Path):
     config_save_path = model_dir / "config.json"
-    with open(config_save_path, "r") as f:
-        data = f.read()
-    config = TrainingConfig.model_validate_json(data)
-
-    hparams = HParams.from_training_config(config)
-    hparams.model_dir = model_dir
-    return hparams
+    config = HParamsConfig.model_validate_json(config_save_path.read_text())
+    return HParams.from_config(config, HParamsRuntimeOverrides(model_dir=model_dir))
 
 
 def get_hparams_from_file(config_path: Path):
-    with open(config_path, "r") as f:
-        data = f.read()
-    config = TrainingConfig.model_validate_json(data)
-
-    hparams = HParams.from_training_config(config)
-    return hparams
+    config = HParamsConfig.model_validate_json(config_path.read_text())
+    return HParams.from_config(config)
 
 
 def check_git_hash(model_dir: Path):
@@ -439,7 +425,7 @@ def get_logger(model_dir: Path, filename: str = "train.log", *, stdout: bool = F
 
 def hparams_to_dict(value: object) -> object:
     if isinstance(value, HParams):
-        return {key: hparams_to_dict(item) for key, item in value.items()}
+        return hparams_to_dict(asdict(value))
     if isinstance(value, dict):
         return {str(key): hparams_to_dict(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
@@ -447,63 +433,175 @@ def hparams_to_dict(value: object) -> object:
     return value
 
 
-class HParams:
-    model_dir: Path
-    experiment_dir: Path
-    save_every_epoch: int
-    name: str
-    total_epoch: int
-    pretrainG: str
-    pretrainD: str
-    version: str
-    gpus: str
-    train: "HParams"
+class HParamsConfig(TrainingConfig):
+    model_config = ConfigDict(extra="forbid")
+
+
+class HParamsRuntimeOverrides(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    model_dir: Path | None = None
+    experiment_dir: Path | None = None
+    save_every_epoch: int = 0
+    name: str = ""
+    total_epoch: int = 0
+    pretrainG: str = ""
+    pretrainD: str = ""
+    version: ModelVersion = "v2"
+    batch_size: int | None = None
+    sample_rate: SampleRateName | None = None
+    if_f0: Literal[0, 1] = 1
+    if_latest: Literal[0, 1] = 0
+    save_every_weights: Literal["0", "1"] = "0"
+    if_cache_data_in_gpu: Literal[0, 1] = 0
+    training_files: Path | None = None
+
+
+@dataclass(frozen=True)
+class TrainHParams:
+    log_interval: int
+    seed: int
+    epochs: int
+    learning_rate: float
+    betas: tuple[float, float]
+    eps: float
     batch_size: int
-    sample_rate: str
-    if_f0: int
-    if_latest: int
-    save_every_weights: str
-    if_cache_data_in_gpu: int
-    data: "HParams"
-    training_files: Path
+    fp16_run: bool
+    lr_decay: float
+    segment_size: int
+    init_lr_ratio: float
+    warmup_epochs: int
+    c_mel: float
+    c_kl: float
 
-    def __init__(self) -> None:
-        pass
+
+@dataclass(frozen=True)
+class DataHParams:
+    max_wav_value: float
+    sampling_rate: int
+    filter_length: int
+    hop_length: int
+    win_length: int
+    n_mel_channels: int
+    mel_fmin: float
+    mel_fmax: float | None
+    training_files: Path | None = None
+
+
+@dataclass(frozen=True)
+class ModelHParams:
+    inter_channels: int
+    hidden_channels: int
+    filter_channels: int
+    n_heads: int
+    n_layers: int
+    kernel_size: int
+    p_dropout: float
+    resblock: str
+    resblock_kernel_sizes: tuple[int, ...]
+    resblock_dilation_sizes: tuple[tuple[int, ...], ...]
+    upsample_rates: tuple[int, ...]
+    upsample_initial_channel: int
+    upsample_kernel_sizes: tuple[int, ...]
+    use_spectral_norm: bool
+    gin_channels: int
+    spk_embed_dim: int
+
+
+@dataclass(frozen=True)
+class HParams:
+    train: TrainHParams
+    data: DataHParams
+    model: ModelHParams
+    model_dir: Path = Path(".")
+    experiment_dir: Path = Path(".")
+    save_every_epoch: int = 0
+    name: str = ""
+    total_epoch: int = 0
+    pretrainG: str = ""
+    pretrainD: str = ""
+    version: ModelVersion = "v2"
+    sample_rate: SampleRateName = "48k"
+    if_f0: Literal[0, 1] = 1
+    if_latest: Literal[0, 1] = 0
+    save_every_weights: Literal["0", "1"] = "0"
+    if_cache_data_in_gpu: Literal[0, 1] = 0
 
     @classmethod
-    def from_training_config(cls, config: TrainingConfig) -> "HParams":
-        return cls.from_pydantic_model(config)
-
-    @classmethod
-    def from_pydantic_model(cls, model: BaseModel) -> "HParams":
-        hparams = cls()
-        for field_name in type(model).model_fields:
-            value = getattr(model, field_name)
-            if isinstance(value, BaseModel):
-                value = cls.from_pydantic_model(value)
-            hparams[field_name] = value
-        return hparams
-
-    def keys(self):
-        return self.__dict__.keys()
-
-    def items(self):
-        return self.__dict__.items()
-
-    def values(self):
-        return self.__dict__.values()
-
-    def __len__(self):
-        return len(self.__dict__)
-
-    def __getitem__(self, key):
-        return getattr(self, key)
-
-    def __setitem__(self, key, value):
-        return setattr(self, key, value)
-
-    def __contains__(self, key):
-        return key in self.__dict__
-
-    def __repr__(self):
-        return self.__dict__.__repr__()
+    def from_config(
+        cls,
+        config: HParamsConfig,
+        runtime: HParamsRuntimeOverrides | None = None,
+    ) -> "HParams":
+        runtime = runtime or HParamsRuntimeOverrides()
+        train = TrainHParams(
+            log_interval=config.train.log_interval,
+            seed=config.train.seed,
+            epochs=config.train.epochs,
+            learning_rate=config.train.learning_rate,
+            betas=config.train.betas,
+            eps=config.train.eps,
+            batch_size=config.train.batch_size,
+            fp16_run=config.train.fp16_run,
+            lr_decay=config.train.lr_decay,
+            segment_size=config.train.segment_size,
+            init_lr_ratio=config.train.init_lr_ratio,
+            warmup_epochs=config.train.warmup_epochs,
+            c_mel=config.train.c_mel,
+            c_kl=config.train.c_kl,
+        )
+        if runtime.batch_size is not None:
+            train = replace(train, batch_size=runtime.batch_size)
+        data = DataHParams(
+            max_wav_value=config.data.max_wav_value,
+            sampling_rate=config.data.sampling_rate,
+            filter_length=config.data.filter_length,
+            hop_length=config.data.hop_length,
+            win_length=config.data.win_length,
+            n_mel_channels=config.data.n_mel_channels,
+            mel_fmin=config.data.mel_fmin,
+            mel_fmax=config.data.mel_fmax,
+            training_files=config.data.training_files,
+        )
+        if runtime.training_files is not None:
+            data = replace(data, training_files=runtime.training_files)
+        sample_rate = runtime.sample_rate or (
+            "48k" if config.data.sampling_rate == 48000 else "32k"
+        )
+        return cls(
+            train=train,
+            data=data,
+            model=ModelHParams(
+                inter_channels=config.model.inter_channels,
+                hidden_channels=config.model.hidden_channels,
+                filter_channels=config.model.filter_channels,
+                n_heads=config.model.n_heads,
+                n_layers=config.model.n_layers,
+                kernel_size=config.model.kernel_size,
+                p_dropout=config.model.p_dropout,
+                resblock=config.model.resblock,
+                resblock_kernel_sizes=tuple(config.model.resblock_kernel_sizes),
+                resblock_dilation_sizes=tuple(
+                    tuple(item) for item in config.model.resblock_dilation_sizes
+                ),
+                upsample_rates=tuple(config.model.upsample_rates),
+                upsample_initial_channel=config.model.upsample_initial_channel,
+                upsample_kernel_sizes=tuple(config.model.upsample_kernel_sizes),
+                use_spectral_norm=config.model.use_spectral_norm,
+                gin_channels=config.model.gin_channels,
+                spk_embed_dim=config.model.spk_embed_dim,
+            ),
+            model_dir=runtime.model_dir or Path("."),
+            experiment_dir=runtime.experiment_dir or Path("."),
+            save_every_epoch=runtime.save_every_epoch,
+            name=runtime.name,
+            total_epoch=runtime.total_epoch,
+            pretrainG=runtime.pretrainG,
+            pretrainD=runtime.pretrainD,
+            version=runtime.version,
+            sample_rate=sample_rate,
+            if_f0=runtime.if_f0,
+            if_latest=runtime.if_latest,
+            save_every_weights=runtime.save_every_weights,
+            if_cache_data_in_gpu=runtime.if_cache_data_in_gpu,
+        )

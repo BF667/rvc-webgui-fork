@@ -3,6 +3,7 @@ import sys
 import traceback
 from collections import OrderedDict
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Literal, Protocol, cast
 
 import torch
@@ -32,11 +33,11 @@ class HParamsModel(Protocol):
     kernel_size: int
     p_dropout: float
     resblock: str
-    resblock_kernel_sizes: list[int]
-    resblock_dilation_sizes: list[list[int]]
-    upsample_rates: list[int]
+    resblock_kernel_sizes: Sequence[int]
+    resblock_dilation_sizes: Sequence[Sequence[int]]
+    upsample_rates: Sequence[int]
     upsample_initial_channel: int
-    upsample_kernel_sizes: list[int]
+    upsample_kernel_sizes: Sequence[int]
     spk_embed_dim: int
     gin_channels: int
 

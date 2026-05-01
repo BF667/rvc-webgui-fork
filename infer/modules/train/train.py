@@ -1,4 +1,3 @@
-import json
 import os
 import sys
 from contextlib import nullcontext
@@ -14,7 +13,6 @@ from loguru import logger
 from lib.accelerate_utils import get_accelerator, use_half_precision
 
 hps = utils.get_hparams()
-selected_gpu = hps.gpus.split("-")[0] if hps.gpus else ""
 from random import shuffle
 
 import torch
@@ -70,10 +68,6 @@ class EpochRecorder:
 
 def main():
     training_logger = utils.get_logger(hps.model_dir, stdout=True)
-    if "-" in hps.gpus:
-        training_logger.warning(
-            f"Multiple GPU ids were requested ({hps.gpus}), but training now runs in a single subprocess on GPU {selected_gpu} to avoid race conditions."
-        )
     training_logger.bind(
         event="ui_progress",
         detail_event="train_started",
@@ -124,7 +118,21 @@ def run(hps, training_logger):
     net_g = RVC_Model_f0(
         hps.data.filter_length // 2 + 1,
         hps.train.segment_size // hps.data.hop_length,
-        **hps.model,
+        hps.model.inter_channels,
+        hps.model.hidden_channels,
+        hps.model.filter_channels,
+        hps.model.n_heads,
+        hps.model.n_layers,
+        hps.model.kernel_size,
+        hps.model.p_dropout,
+        hps.model.resblock,
+        hps.model.resblock_kernel_sizes,
+        hps.model.resblock_dilation_sizes,
+        hps.model.upsample_rates,
+        hps.model.upsample_initial_channel,
+        hps.model.upsample_kernel_sizes,
+        hps.model.spk_embed_dim,
+        hps.model.gin_channels,
         is_half=use_fp16,
         sr=hps.sample_rate,
     )
