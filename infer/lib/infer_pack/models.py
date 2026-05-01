@@ -134,12 +134,12 @@ class ResidualCouplingBlock(nn.Module):
                 x, _ = flow.forward(x, x_mask, g=g, reverse=reverse)
         return x
 
-    def remove_weight_norm(self):
+    def remove_weight_norm(self) -> None:
         for i in range(self.n_flows):
             flow = cast(modules.ResidualCouplingLayer, self.flows[i * 2])
             flow.remove_weight_norm()
 
-    def __prepare_scriptable__(self):
+    def __prepare_scriptable__(self) -> "ResidualCouplingBlock":
         for i in range(self.n_flows):
             for hook in self.flows[i * 2]._forward_pre_hooks.values():
                 if (
@@ -194,10 +194,10 @@ class PosteriorEncoder(nn.Module):
         z = (m + torch.randn_like(m) * torch.exp(logs)) * x_mask
         return z, m, logs, x_mask
 
-    def remove_weight_norm(self):
+    def remove_weight_norm(self) -> None:
         self.enc.remove_weight_norm()
 
-    def __prepare_scriptable__(self):
+    def __prepare_scriptable__(self) -> "PosteriorEncoder":
         for hook in self.enc._forward_pre_hooks.values():
             if (
                 hook.__module__ == "torch.nn.utils.weight_norm"
@@ -287,7 +287,7 @@ class Generator(torch.nn.Module):
 
         return x
 
-    def __prepare_scriptable__(self):
+    def __prepare_scriptable__(self) -> "Generator":
         for l in self.ups:
             for hook in l._forward_pre_hooks.values():
                 # The hook we want to remove is an instance of WeightNorm class, so
@@ -309,7 +309,7 @@ class Generator(torch.nn.Module):
                     torch.nn.utils.remove_weight_norm(l)
         return self
 
-    def remove_weight_norm(self):
+    def remove_weight_norm(self) -> None:
         for l in self.ups:
             remove_weight_norm(l)
         for l in self.resblocks:
@@ -349,13 +349,13 @@ class SineGen(torch.nn.Module):
         self.sampling_rate = samp_rate
         self.voiced_threshold = voiced_threshold
 
-    def _f02uv(self, f0):
+    def _f02uv(self, f0: torch.Tensor) -> torch.Tensor:
         # generate uv signal
         uv = torch.ones_like(f0)
         uv = uv * (f0 > self.voiced_threshold)
         return uv
 
-    def _f02sine(self, f0, upp):
+    def _f02sine(self, f0: torch.Tensor, upp: int) -> torch.Tensor:
         """f0: (batchsize, length, dim)
         where dim indicates fundamental tone and overtones
         """
@@ -375,7 +375,9 @@ class SineGen(torch.nn.Module):
         sines = torch.sin(2 * np.pi * rad)
         return sines
 
-    def forward(self, f0: torch.Tensor, upp: int):
+    def forward(
+        self, f0: torch.Tensor, upp: int
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """sine_tensor, uv = forward(f0)
         input F0: tensor(batchsize=1, length, dim=1)
                   f0 for unvoiced steps should be 0
@@ -437,7 +439,9 @@ class SourceModuleHnNSF(torch.nn.Module):
         self.l_tanh = torch.nn.Tanh()
         # self.ddtype:int = -1
 
-    def forward(self, x: torch.Tensor, upp: int = 1):
+    def forward(
+        self, x: torch.Tensor, upp: int = 1
+    ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
         # if self.ddtype ==-1:
         #     self.ddtype = self.l_linear.weight.dtype
         sine_wavs, uv, _ = self.l_sin_gen(x, upp)
@@ -571,13 +575,13 @@ class GeneratorNSF(torch.nn.Module):
 
         return x
 
-    def remove_weight_norm(self):
+    def remove_weight_norm(self) -> None:
         for l in self.ups:
             remove_weight_norm(l)
         for l in self.resblocks:
             l.remove_weight_norm()
 
-    def __prepare_scriptable__(self):
+    def __prepare_scriptable__(self) -> "GeneratorNSF":
         for l in self.ups:
             for hook in l._forward_pre_hooks.values():
                 # The hook we want to remove is an instance of WeightNorm class, so
@@ -692,13 +696,13 @@ class SynthesizerTrnMs256NSFsid(nn.Module):
             + str(self.spk_embed_dim)
         )
 
-    def remove_weight_norm(self):
+    def remove_weight_norm(self) -> None:
         self.dec.remove_weight_norm()
         self.flow.remove_weight_norm()
         if hasattr(self, "enc_q"):
             self.enc_q.remove_weight_norm()
 
-    def __prepare_scriptable__(self):
+    def __prepare_scriptable__(self) -> "SynthesizerTrnMs256NSFsid":
         for hook in self.dec._forward_pre_hooks.values():
             # The hook we want to remove is an instance of WeightNorm class, so
             # normally we would do `if isinstance(...)` but this class is not accessible
@@ -923,13 +927,13 @@ class SynthesizerTrnMs256NSFsid_nono(nn.Module):
             + str(self.spk_embed_dim)
         )
 
-    def remove_weight_norm(self):
+    def remove_weight_norm(self) -> None:
         self.dec.remove_weight_norm()
         self.flow.remove_weight_norm()
         if hasattr(self, "enc_q"):
             self.enc_q.remove_weight_norm()
 
-    def __prepare_scriptable__(self):
+    def __prepare_scriptable__(self) -> "SynthesizerTrnMs256NSFsid_nono":
         for hook in self.dec._forward_pre_hooks.values():
             # The hook we want to remove is an instance of WeightNorm class, so
             # normally we would do `if isinstance(...)` but this class is not accessible
@@ -1075,7 +1079,9 @@ class MultiPeriodDiscriminator(torch.nn.Module):
         ]
         self.discriminators = nn.ModuleList(discs)
 
-    def forward(self, y, y_hat):
+    def forward(
+        self, y: torch.Tensor, y_hat: torch.Tensor
+    ) -> tuple[list[torch.Tensor], list[torch.Tensor], list[list[torch.Tensor]], list[list[torch.Tensor]]]:
         y_d_rs = []  #
         y_d_gs = []
         fmap_rs = []
@@ -1105,7 +1111,9 @@ class MultiPeriodDiscriminatorV2(torch.nn.Module):
         ]
         self.discriminators = nn.ModuleList(discs)
 
-    def forward(self, y, y_hat):
+    def forward(
+        self, y: torch.Tensor, y_hat: torch.Tensor
+    ) -> tuple[list[torch.Tensor], list[torch.Tensor], list[list[torch.Tensor]], list[list[torch.Tensor]]]:
         y_d_rs = []  #
         y_d_gs = []
         fmap_rs = []
@@ -1139,7 +1147,7 @@ class DiscriminatorS(torch.nn.Module):
         )
         self.conv_post = norm_f(Conv1d(1024, 1, 3, 1, padding=1))
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, list[torch.Tensor]]:
         fmap = []
 
         for l in self.convs:
@@ -1210,7 +1218,7 @@ class DiscriminatorP(torch.nn.Module):
         )
         self.conv_post = norm_f(Conv2d(1024, 1, (3, 1), 1, padding=(1, 0)))
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, list[torch.Tensor]]:
         fmap = []
 
         # 1d to 2d
