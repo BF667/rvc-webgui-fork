@@ -100,25 +100,34 @@ def get_timing_signal_1d(length, channels, min_timescale=1.0, max_timescale=1.0e
     return signal
 
 
-def add_timing_signal_1d(x, min_timescale=1.0, max_timescale=1.0e4):
+def add_timing_signal_1d(
+    x: torch.Tensor, min_timescale: float = 1.0, max_timescale: float = 1.0e4
+):
     b, channels, length = x.size()
     signal = get_timing_signal_1d(length, channels, min_timescale, max_timescale)
     return x + signal.to(dtype=x.dtype, device=x.device)
 
 
-def cat_timing_signal_1d(x, min_timescale=1.0, max_timescale=1.0e4, axis=1):
+def cat_timing_signal_1d(
+    x: torch.Tensor,
+    min_timescale: float = 1.0,
+    max_timescale: float = 1.0e4,
+    axis: int = 1,
+) -> torch.Tensor:
     b, channels, length = x.size()
     signal = get_timing_signal_1d(length, channels, min_timescale, max_timescale)
     return torch.cat([x, signal.to(dtype=x.dtype, device=x.device)], axis)
 
 
-def subsequent_mask(length):
+def subsequent_mask(length: int) -> torch.Tensor:
     mask = torch.tril(torch.ones(length, length)).unsqueeze(0).unsqueeze(0)
     return mask
 
 
 @torch.jit.script
-def fused_add_tanh_sigmoid_multiply(input_a, input_b, n_channels):
+def fused_add_tanh_sigmoid_multiply(
+    input_a: torch.Tensor, input_b: torch.Tensor, n_channels: torch.Tensor
+) -> torch.Tensor:
     n_channels_int = n_channels[0]
     in_act = input_a + input_b
     t_act = torch.tanh(in_act[:, :n_channels_int, :])
