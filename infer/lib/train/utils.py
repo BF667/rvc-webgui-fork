@@ -1,4 +1,3 @@
-import logging
 import json
 import os
 import subprocess
@@ -6,18 +5,16 @@ import sys
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
 from scipy.io.wavfile import read
 from tap import Tap
+from loguru import logger
 
 # MATPLOTLIB_FLAG = False
-
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-logger = logging
 
 
 class TrainArgs(Tap):
@@ -85,15 +82,11 @@ def load_checkpoint_d(
                 new_state_dict[k] = saved_state_dict[k]
                 if saved_state_dict[k].shape != state_dict[k].shape:
                     logger.warning(
-                        "shape-%s-mismatch. need: %s, get: %s",
-                        k,
-                        state_dict[k].shape,
-                        saved_state_dict[k].shape,
+                        f"Shape mismatch for {k}. Need {state_dict[k].shape}, got {saved_state_dict[k].shape}"
                     )  #
                     raise KeyError
-            except:
-                # logger.info(traceback.format_exc())
-                logger.info("%s is not in the checkpoint", k)  # Missing in pretrain
+            except Exception:
+                logger.info(f"{k} is not in the checkpoint")
                 new_state_dict[k] = v  # Random values provided by the model
         if hasattr(model, "module"):
             model.module.load_state_dict(new_state_dict, strict=False)
@@ -115,7 +108,7 @@ def load_checkpoint_d(
         optimizer.load_state_dict(checkpoint_dict["optimizer"])
     #   except:
     #     traceback.print_exc()
-    logger.info("Loaded checkpoint '{}' (epoch {})".format(checkpoint_path, iteration))
+    logger.info(f"Loaded checkpoint '{checkpoint_path}' (epoch {iteration})")
     return model, optimizer, learning_rate, iteration
 
 
@@ -165,15 +158,11 @@ def load_checkpoint(checkpoint_path: Path, model, optimizer=None, load_opt: int 
             new_state_dict[k] = saved_state_dict[k]
             if saved_state_dict[k].shape != state_dict[k].shape:
                 logger.warning(
-                    "shape-%s-mismatch|need-%s|get-%s",
-                    k,
-                    state_dict[k].shape,
-                    saved_state_dict[k].shape,
+                    f"Shape mismatch for {k}. Need {state_dict[k].shape}, got {saved_state_dict[k].shape}"
                 )  #
                 raise KeyError
-        except:
-            # logger.info(traceback.format_exc())
-            logger.info("%s is not in the checkpoint", k)  # Missing in pretrain
+        except Exception:
+            logger.info(f"{k} is not in the checkpoint")
             new_state_dict[k] = v  # Random values provided by the model
     if hasattr(model, "module"):
         model.module.load_state_dict(new_state_dict, strict=False)
@@ -190,15 +179,13 @@ def load_checkpoint(checkpoint_path: Path, model, optimizer=None, load_opt: int 
         optimizer.load_state_dict(checkpoint_dict["optimizer"])
     #   except:
     #     traceback.print_exc()
-    logger.info("Loaded checkpoint '{}' (epoch {})".format(checkpoint_path, iteration))
+    logger.info(f"Loaded checkpoint '{checkpoint_path}' (epoch {iteration})")
     return model, optimizer, learning_rate, iteration
 
 
 def save_checkpoint(model, optimizer, learning_rate, iteration, checkpoint_path: Path):
     logger.info(
-        "Saving model and optimizer state at epoch {} to {}".format(
-            iteration, checkpoint_path
-        )
+        f"Saving model and optimizer state at epoch {iteration} to {checkpoint_path}"
     )
     if hasattr(model, "module"):
         state_dict = model.module.state_dict()
@@ -219,9 +206,7 @@ def save_checkpoint_d(
     combd, sbd, optimizer, learning_rate: float, iteration, checkpoint_path: Path
 ):
     logger.info(
-        "Saving model and optimizer state at epoch {} to {}".format(
-            iteration, checkpoint_path
-        )
+        f"Saving model and optimizer state at epoch {iteration} to {checkpoint_path}"
     )
     if hasattr(combd, "module"):
         state_dict_combd = combd.module.state_dict()
@@ -387,28 +372,53 @@ def check_git_hash(model_dir: str):
         saved_hash = git_hash_file.read_text()
         if saved_hash != cur_hash:
             logger.warning(
-                "git hash values are different. {}(saved) != {}(current)".format(
-                    saved_hash[:8], cur_hash[:8]
-                )
+                f"Git hash values are different. {saved_hash[:8]} (saved) != {cur_hash[:8]} (current)"
             )
     else:
         git_hash_file.write_text(cur_hash)
 
 
-def get_logger(model_dir: str, filename: str = "train.log"):
-    global logger
-    logger = logging.getLogger(os.path.basename(model_dir))
-    logger.setLevel(logging.DEBUG)
-
-    formatter = logging.Formatter("%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s")
+def get_logger(model_dir: str, filename: str = "train.log", *, stdout: bool = False):
     log_dir = Path(model_dir)
-    if not log_dir.exists():
-        log_dir.mkdir(parents=True, exist_ok=True)
-    h = logging.FileHandler(log_dir / filename)
-    h.setLevel(logging.DEBUG)
-    h.setFormatter(formatter)
-    logger.addHandler(h)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / filename
+    logger.remove()
+    if stdout:
+        logger.add(
+            sys.stdout,
+            level="INFO",
+            serialize=True,
+            enqueue=False,
+            backtrace=False,
+            diagnose=False,
+        )
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        serialize=False,
+        enqueue=False,
+        backtrace=False,
+        diagnose=False,
+    )
+    logger.add(
+        log_path,
+        level="INFO",
+        serialize=True,
+        enqueue=False,
+        backtrace=False,
+        diagnose=False,
+    )
     return logger
+
+
+def hparams_to_dict(value: Any) -> Any:
+    if isinstance(value, HParams):
+        return {key: hparams_to_dict(item) for key, item in value.items()}
+    if isinstance(value, dict):
+        return {str(key): hparams_to_dict(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [hparams_to_dict(item) for item in value]
+    return value
 
 
 class HParams:

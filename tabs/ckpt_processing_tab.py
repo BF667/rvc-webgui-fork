@@ -1,4 +1,5 @@
 import os
+import json
 import traceback
 from pathlib import Path
 import gradio as gr
@@ -18,11 +19,13 @@ def change_info_(ckpt_path):
         return {"__type__": "update"}, {"__type__": "update"}, {"__type__": "update"}
     try:
         with open(train_log, "r") as f:
-            info = eval(f.read().strip("\n").split("\n")[0].split("\t")[-1])
+            first_line = next((line for line in f.read().splitlines() if line.strip()), "")
+            payload = json.loads(first_line)
+            info = payload["record"]["extra"]["hparams"]
             sr, f0 = info["sample_rate"], info["if_f0"]
             version = "v2" if ("version" in info and info["version"] == "v2") else "v1"
             return sr, str(f0), version
-    except:
+    except Exception:
         traceback.print_exc()
         return {"__type__": "update"}, {"__type__": "update"}, {"__type__": "update"}
 

@@ -1,12 +1,9 @@
 import json
 import os
 import sys
-import logging
 from pathlib import Path
 from contextlib import contextmanager
-from typing import Generator, cast
-
-logger = logging.getLogger(__name__)
+from typing import Generator
 
 now_dir = os.getcwd()
 sys.path.append(os.path.join(now_dir))
@@ -14,14 +11,15 @@ sys.path.append(os.path.join(now_dir))
 import datetime
 
 from infer.lib.train import utils
+from loguru import logger
 
 hps = utils.get_hparams()
-os.environ["CUDA_VISIBLE_DEVICES"] = hps.gpus.replace("-", ",")
-n_gpus = len(hps.gpus.split("-"))
-from random import randint, shuffle
+selected_gpu = hps.gpus.split("-")[0] if hps.gpus else ""
+if selected_gpu:
+    os.environ["CUDA_VISIBLE_DEVICES"] = selected_gpu
+from random import shuffle
 
 import torch
-from torch import nn
 
 
 @contextmanager
@@ -35,17 +33,13 @@ torch.backends.cudnn.benchmark = False
 from time import sleep
 from time import time as ttime
 
-import torch.distributed as dist
-import torch.multiprocessing as mp
 from torch.nn import functional as F
-from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 
 # from torch.utils.tensorboard import SummaryWriter
 
 from infer.lib.infer_pack import commons
 from infer.lib.train.data_utils import (
-    DistributedBucketSampler,
     TextAudioCollate,
     TextAudioCollateMultiNSFsid,
     TextAudioLoader,
@@ -91,59 +85,47 @@ class EpochRecorder:
 
 
 def main():
-    n_gpus = torch.cuda.device_count()
-
-    if torch.cuda.is_available() == False and torch.backends.mps.is_available() == True:
-        n_gpus = 1
-    if n_gpus < 1:
-        # patch to unblock people without gpus. there is probably a better way.
-        print("NO GPU DETECTED: falling back to CPU - this may take a while")
-        n_gpus = 1
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = str(randint(20000, 55555))
-    children = []
-    logger = utils.get_logger(hps.model_dir)
-    for i in range(n_gpus):
-        subproc = mp.Process(
-            target=run,
-            args=(i, n_gpus, hps, logger),
+    training_logger = utils.get_logger(hps.model_dir, stdout=True)
+    if "-" in hps.gpus:
+        training_logger.warning(
+            f"Multiple GPU ids were requested ({hps.gpus}), but training now runs in a single subprocess on GPU {selected_gpu} to avoid race conditions."
         )
-        children.append(subproc)
-        subproc.start()
+    training_logger.bind(
+        event="ui_progress",
+        detail_event="train_started",
+        stage="train",
+        current=0,
+        total=max(hps.total_epoch, 1),
+        fraction=0.0,
+        message=f"Starting training 0/{hps.total_epoch} epochs",
+    ).info("Starting training")
+    run(hps, training_logger)
 
-    for i in range(n_gpus):
-        children[i].join()
 
-
-def run(rank: int, n_gpus: int, hps, logger: logging.Logger):
+def run(hps, training_logger):
     global global_step
-    if rank == 0:
-        logger = utils.get_logger(hps.model_dir)
-        logger.info(hps)
-        utils.check_git_hash(hps.model_dir)
-        # writer = SummaryWriter(log_dir=hps.model_dir)
-        # writer_eval = SummaryWriter(log_dir=os.path.join(hps.model_dir, "eval"))
-
-    dist.init_process_group(
-        backend="gloo", init_method="env://", world_size=n_gpus, rank=rank
-    )
+    training_logger.bind(
+        event="train_hparams",
+        hparams=utils.hparams_to_dict(hps),
+    ).info("Loaded training configuration")
+    training_logger.bind(
+        event="ui_progress",
+        detail_event="train_setup",
+        stage="train",
+        current=0,
+        total=max(hps.total_epoch, 1),
+        fraction=0.0,
+        message="Preparing training data and models...",
+    ).info("Preparing training setup")
+    utils.check_git_hash(hps.model_dir)
     torch.manual_seed(hps.train.seed)
     if torch.cuda.is_available():
-        torch.cuda.set_device(rank)
+        torch.cuda.set_device(0)
 
     if hps.if_f0 == 1:
         train_dataset = TextAudioLoaderMultiNSFsid(hps.data.training_files, hps.data)
     else:
         train_dataset = TextAudioLoader(hps.data.training_files, hps.data)
-    train_sampler = DistributedBucketSampler(
-        train_dataset,
-        hps.train.batch_size * n_gpus,
-        # [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1200,1400],  # 16s
-        [100, 200, 300, 400, 500, 600, 700, 800, 900],  # 16s
-        num_replicas=n_gpus,
-        rank=rank,
-        shuffle=True,
-    )
     # It is possible that dataloader's workers are out of shared memory. Please try to raise your shared memory limit.
     # num_workers=8 -> num_workers=4
     if hps.if_f0 == 1:
@@ -153,10 +135,10 @@ def run(rank: int, n_gpus: int, hps, logger: logging.Logger):
     train_loader = DataLoader(
         train_dataset,
         num_workers=4,
-        shuffle=False,
+        shuffle=True,
         pin_memory=True,
         collate_fn=collate_fn,
-        batch_sampler=train_sampler,
+        batch_size=hps.train.batch_size,
         persistent_workers=True,
         prefetch_factor=8,
     )
@@ -176,10 +158,10 @@ def run(rank: int, n_gpus: int, hps, logger: logging.Logger):
             is_half=hps.train.fp16_run,
         )
     if torch.cuda.is_available():
-        net_g = net_g.cuda(rank)
+        net_g = net_g.cuda(0)
     net_d = MultiPeriodDiscriminator(hps.model.use_spectral_norm)
     if torch.cuda.is_available():
-        net_d = net_d.cuda(rank)
+        net_d = net_d.cuda(0)
     optim_g = torch.optim.AdamW(
         net_g.parameters(),
         hps.train.learning_rate,
@@ -192,21 +174,11 @@ def run(rank: int, n_gpus: int, hps, logger: logging.Logger):
         betas=hps.train.betas,
         eps=hps.train.eps,
     )
-    # net_g = DDP(net_g, device_ids=[rank], find_unused_parameters=True)
-    # net_d = DDP(net_d, device_ids=[rank], find_unused_parameters=True)
-    if torch.cuda.is_available():
-        net_g = DDP(net_g, device_ids=[rank])
-        net_d = DDP(net_d, device_ids=[rank])
-    else:
-        net_g = DDP(net_g)
-        net_d = DDP(net_d)
-
     try:  # If it can load, automatically resume
         _, _, _, epoch_str = utils.load_checkpoint(
             utils.latest_checkpoint_path(hps.model_dir, "D_*.pth"), net_d, optim_d
         )  # D mostly loads fine
-        if rank == 0:
-            logger.info("loaded D")
+        training_logger.info("Loaded discriminator checkpoint")
         # _, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), net_g, optim_g,load_opt=0)
         _, _, _, epoch_str = utils.load_checkpoint(
             utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), net_g, optim_g
@@ -219,45 +191,23 @@ def run(rank: int, n_gpus: int, hps, logger: logging.Logger):
         epoch_str = 1
         global_step = 0
         if hps.pretrainG != "":
-            if rank == 0:
-                logger.info("loaded pretrained %s" % (hps.pretrainG))
-            if hasattr(net_g, "module"):
-                net_g_module = cast(nn.Module, net_g.module)
-                logger.info(
-                    net_g_module.load_state_dict(
-                        torch.load(
-                            hps.pretrainG, map_location="cpu", weights_only=False
-                        )["model"]
-                    )
-                )  ## Test without loading optimizer
-            else:
-                logger.info(
-                    net_g.load_state_dict(
-                        torch.load(
-                            hps.pretrainG, map_location="cpu", weights_only=False
-                        )["model"]
-                    )
-                )  ## Test without loading optimizer
+            training_logger.info(f"Loading pretrained generator from {hps.pretrainG}")
+            training_logger.info(
+                net_g.load_state_dict(
+                    torch.load(hps.pretrainG, map_location="cpu", weights_only=False)[
+                        "model"
+                    ]
+                )
+            )
         if hps.pretrainD != "":
-            if rank == 0:
-                logger.info("loaded pretrained %s" % (hps.pretrainD))
-            if hasattr(net_d, "module"):
-                net_d_module = cast(nn.Module, net_d.module)
-                logger.info(
-                    net_d_module.load_state_dict(
-                        torch.load(
-                            hps.pretrainD, map_location="cpu", weights_only=False
-                        )["model"]
-                    )
+            training_logger.info(f"Loading pretrained discriminator from {hps.pretrainD}")
+            training_logger.info(
+                net_d.load_state_dict(
+                    torch.load(hps.pretrainD, map_location="cpu", weights_only=False)[
+                        "model"
+                    ]
                 )
-            else:
-                logger.info(
-                    net_d.load_state_dict(
-                        torch.load(
-                            hps.pretrainD, map_location="cpu", weights_only=False
-                        )["model"]
-                    )
-                )
+            )
 
     scheduler_g = torch.optim.lr_scheduler.ExponentialLR(
         optim_g, gamma=hps.train.lr_decay, last_epoch=epoch_str - 2
@@ -270,35 +220,19 @@ def run(rank: int, n_gpus: int, hps, logger: logging.Logger):
 
     cache = []
     for epoch in range(epoch_str, hps.train.epochs + 1):
-        if rank == 0:
-            train_and_evaluate(
-                rank,
-                epoch,
-                hps,
-                [net_g, net_d],
-                [optim_g, optim_d],
-                [scheduler_g, scheduler_d],
-                scaler,
-                [train_loader, None],
-                logger,
-                # [writer, writer_eval],
-                None,
-                cache,
-            )
-        else:
-            train_and_evaluate(
-                rank,
-                epoch,
-                hps,
-                [net_g, net_d],
-                [optim_g, optim_d],
-                [scheduler_g, scheduler_d],
-                scaler,
-                [train_loader, None],
-                None,
-                None,
-                cache,
-            )
+        train_and_evaluate(
+            0,
+            epoch,
+            hps,
+            [net_g, net_d],
+            [optim_g, optim_d],
+            [scheduler_g, scheduler_d],
+            scaler,
+            [train_loader, None],
+            training_logger,
+            None,
+            cache,
+        )
         # scheduler_g.step()
         # scheduler_d.step()
 
@@ -322,7 +256,8 @@ def train_and_evaluate(
     # if writers is not None:
     #     writer, writer_eval = writers
 
-    train_loader.batch_sampler.set_epoch(epoch)
+    if hasattr(train_loader, "batch_sampler") and hasattr(train_loader.batch_sampler, "set_epoch"):
+        train_loader.batch_sampler.set_epoch(epoch)
     global global_step
 
     net_g.train()
@@ -534,52 +469,39 @@ def train_and_evaluate(
             schedulers[1].step()
             schedulers[0].step()
 
-        if rank == 0:
-            if global_step % hps.train.log_interval == 0:
-                lr = optim_g.param_groups[0]["lr"]
-                logger.info(
-                    "Train Epoch: {} [{:.0f}%]".format(
-                        epoch, 100.0 * batch_idx / len(train_loader)
-                    )
-                )
-                # Amor For Tensorboard display
-                if loss_mel > 75:
-                    loss_mel = 75
-                if loss_kl > 9:
-                    loss_kl = 9
-
-                logger.info([global_step, lr])
-                logger.info(
-                    f"loss_disc={loss_disc:.3f}, loss_gen={loss_gen:.3f}, loss_fm={loss_fm:.3f},loss_mel={loss_mel:.3f}, loss_kl={loss_kl:.3f}"
-                )
-                scalar_dict = {
-                    "loss/g/total": loss_gen_all,
-                    "loss/d/total": loss_disc,
-                    "learning_rate": lr,
-                    "grad_norm_d": grad_norm_d,
-                    "grad_norm_g": grad_norm_g,
-                }
-                scalar_dict.update(
-                    {
-                        "loss/g/fm": loss_fm,
-                        "loss/g/mel": loss_mel,
-                        "loss/g/kl": loss_kl,
-                    }
-                )
-
-                scalar_dict.update(
-                    {"loss/g/{}".format(i): v for i, v in enumerate(losses_gen)}
-                )
-                scalar_dict.update(
-                    {"loss/d_r/{}".format(i): v for i, v in enumerate(losses_disc_r)}
-                )
-                scalar_dict.update(
-                    {"loss/d_g/{}".format(i): v for i, v in enumerate(losses_disc_g)}
-                )
-
-                print(
-                    f"SCALAR_DICT: {json.dumps({k: v.item() if isinstance(v, torch.Tensor) else v for k, v in scalar_dict.items()})}"
-                )
+        if global_step % hps.train.log_interval == 0:
+            lr = float(optim_g.param_groups[0]["lr"])
+            loss_mel_value = min(float(loss_mel), 75.0)
+            loss_kl_value = min(float(loss_kl), 9.0)
+            total_batches = len(train_loader)
+            progress_current = ((epoch - 1) * total_batches) + batch_idx + 1
+            progress_total = max(hps.total_epoch * total_batches, 1)
+            logger.bind(
+                event="ui_progress",
+                detail_event="train_progress",
+                stage="train",
+                epoch=epoch,
+                total_epoch=hps.total_epoch,
+                batch=batch_idx + 1,
+                total_batches=total_batches,
+                current=progress_current,
+                total=progress_total,
+                fraction=progress_current / progress_total,
+                message=(
+                    f"Epoch {epoch}/{hps.total_epoch}, batch {batch_idx + 1}/{total_batches}, "
+                    f"lr {lr:.6f}, mel loss {loss_mel_value:.3f}"
+                ),
+                global_step=global_step,
+                learning_rate=lr,
+                loss_disc=round(float(loss_disc), 4),
+                loss_gen=round(float(loss_gen), 4),
+                loss_fm=round(float(loss_fm), 4),
+                loss_mel=round(loss_mel_value, 4),
+                loss_kl=round(loss_kl_value, 4),
+            ).info(
+                f"Epoch {epoch}/{hps.total_epoch} batch {batch_idx + 1}/{total_batches} "
+                f"lr={lr:.6f} loss_mel={loss_mel_value:.3f} loss_kl={loss_kl_value:.3f}"
+            )
                 # image_dict = {
                 #     "slice/mel_org": utils.plot_spectrogram_to_numpy(
                 #         y_mel[0].data.cpu().numpy()
@@ -600,7 +522,7 @@ def train_and_evaluate(
         global_step += 1
     # /Run steps
 
-    if epoch % hps.save_every_epoch == 0 and rank == 0:
+    if epoch % hps.save_every_epoch == 0:
         model_dir = Path(hps.model_dir)
         if hps.if_latest == 0:
             utils.save_checkpoint(
@@ -632,49 +554,44 @@ def train_and_evaluate(
                 epoch,
                 model_dir / "D_{}.pth".format(2333333),
             )
-        if rank == 0 and hps.save_every_weights == "1":
-            if hasattr(net_g, "module"):
-                ckpt = net_g.module.state_dict()
-            else:
-                ckpt = net_g.state_dict()
-            logger.info(
-                "saving ckpt %s_e%s:%s"
-                % (
-                    hps.name,
-                    epoch,
-                    savee(
-                        ckpt,
-                        hps.sample_rate,
-                        hps.if_f0,
-                        hps.name + "_e%s_s%s" % (epoch, global_step),
-                        epoch,
-                        hps.version,
-                        hps,
-                    ),
-                )
+        if hps.save_every_weights == "1":
+            ckpt = net_g.state_dict()
+            saved_path = savee(
+                ckpt,
+                hps.sample_rate,
+                hps.if_f0,
+                f"{hps.name}_e{epoch}_s{global_step}",
+                epoch,
+                hps.version,
+                hps,
             )
+            logger.info(f"Saved intermediate checkpoint {hps.name}_e{epoch}:{saved_path}")
 
-    if rank == 0:
-        logger.info("====> Epoch: {} {}".format(epoch, epoch_recorder.record()))
-    if epoch >= hps.total_epoch and rank == 0:
+    logger.bind(
+        event="ui_progress",
+        detail_event="train_epoch_complete",
+        stage="train",
+        epoch=epoch,
+        total_epoch=hps.total_epoch,
+        current=epoch,
+        total=hps.total_epoch,
+        fraction=epoch / max(hps.total_epoch, 1),
+        message=f"Finished epoch {epoch}/{hps.total_epoch}",
+        elapsed=epoch_recorder.record(),
+    ).info(f"Finished epoch {epoch}/{hps.total_epoch}")
+    if epoch >= hps.total_epoch:
         logger.info("Training is done. The program is closed.")
 
-        if hasattr(net_g, "module"):
-            ckpt = net_g.module.state_dict()
-        else:
-            ckpt = net_g.state_dict()
-        logger.info(
-            "saving final ckpt:%s"
-            % (
-                savee(
-                    ckpt, hps.sample_rate, hps.if_f0, hps.name, epoch, hps.version, hps
-                )
-            )
+        ckpt = net_g.state_dict()
+        final_path = savee(
+            ckpt, hps.sample_rate, hps.if_f0, hps.name, epoch, hps.version, hps
+        )
+        logger.bind(event="train_finished", epoch=epoch, total_epoch=hps.total_epoch).info(
+            f"Saved final checkpoint: {final_path}"
         )
         sleep(1)
-        os._exit(2333333)
+        return
 
 
 if __name__ == "__main__":
-    torch.multiprocessing.set_start_method("spawn")
     main()

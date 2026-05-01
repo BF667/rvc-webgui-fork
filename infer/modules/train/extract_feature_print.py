@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 from tap import Tap
+from loguru import logger
 
 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
@@ -19,10 +20,6 @@ def parse_bool(value: BoolString) -> bool:
 class ExtractFeatureCpuArgs(Tap):
     # Requested device.
     device: str
-    # Total number of extraction partitions.
-    n_part: int
-    # Partition index handled by this worker.
-    i_part: int
     # Experiment directory.
     exp_dir: Path
     # Model version.
@@ -32,8 +29,6 @@ class ExtractFeatureCpuArgs(Tap):
 
     def configure(self) -> None:
         self.add_argument("device")
-        self.add_argument("n_part")
-        self.add_argument("i_part")
         self.add_argument("exp_dir")
         self.add_argument("version")
         self.add_argument("is_half")
@@ -42,10 +37,6 @@ class ExtractFeatureCpuArgs(Tap):
 class ExtractFeatureGpuArgs(Tap):
     # Requested device.
     device: str
-    # Total number of extraction partitions.
-    n_part: int
-    # Partition index handled by this worker.
-    i_part: int
     # GPU ID assigned to this worker.
     i_gpu: str
     # Experiment directory.
@@ -57,8 +48,6 @@ class ExtractFeatureGpuArgs(Tap):
 
     def configure(self) -> None:
         self.add_argument("device")
-        self.add_argument("n_part")
-        self.add_argument("i_part")
         self.add_argument("i_gpu")
         self.add_argument("exp_dir")
         self.add_argument("version")
@@ -67,17 +56,13 @@ class ExtractFeatureGpuArgs(Tap):
 
 if any(arg in {"-h", "--help"} for arg in sys.argv[1:]):
     parsed_args = ExtractFeatureGpuArgs().parse_args()
-elif len(sys.argv) == 7:
+elif len(sys.argv) == 5:
     parsed_args = ExtractFeatureCpuArgs().parse_args()
-elif len(sys.argv) == 8:
+elif len(sys.argv) == 6:
     parsed_args = ExtractFeatureGpuArgs().parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = str(parsed_args.i_gpu)
 else:
-    raise ValueError(
-        "Expected positional arguments: device n_part i_part [i_gpu] exp_dir version is_half"
-    )
-n_part = parsed_args.n_part
-i_part = parsed_args.i_part
+    raise ValueError("Expected positional arguments: device [i_gpu] exp_dir version is_half")
 exp_dir = parsed_args.exp_dir
 version = parsed_args.version
 is_half = parse_bool(parsed_args.is_half)
@@ -93,19 +78,29 @@ if torch.cuda.is_available():
 elif torch.backends.mps.is_available():
     device = "mps"
 
-f = open(exp_dir / "extract_f0_feature.log", "a+")
+logger.remove()
+logger.add(
+    exp_dir / "extract_f0_feature.log",
+    level="INFO",
+    serialize=True,
+    enqueue=False,
+    backtrace=False,
+    diagnose=False,
+)
+logger.add(
+    sys.stderr,
+    level="INFO",
+    serialize=False,
+    enqueue=False,
+    backtrace=False,
+    diagnose=False,
+)
 
 
-def printt(strr):
-    print(strr)
-    f.write(f"{strr}\n")
-    f.flush()
-
-
-printt(" ".join(sys.argv))
+logger.bind(event="feature_args", argv=sys.argv[1:]).info("Received feature extraction args")
 model_path = "assets/hubert/hubert_base.pt"
 
-printt(f"exp_dir: {exp_dir}")
+logger.info(f"Feature extraction output directory: {exp_dir}")
 wavPath = exp_dir / "1_16k_wavs"
 outPath = exp_dir / "3_feature256" if version == "v1" else exp_dir / "3_feature768"
 outPath.mkdir(parents=True, exist_ok=True)
@@ -127,11 +122,20 @@ def readwave(wav_path, normalize=False):
 
 
 # HuBERT model
-printt(f"load model(s) from {model_path}")
+logger.bind(
+    event="ui_progress",
+    detail_event="feature_model_loading",
+    stage="extract_feature",
+    current=0,
+    total=1,
+    fraction=0.0,
+    message="Loading HuBERT model...",
+).info("Loading HuBERT model")
+logger.info(f"Loading HuBERT model from {model_path}")
 # if hubert model is exist
-if os.access(model_path, os.F_OK) == False:
-    printt(
-        f"Error: Extracting is shut down because {model_path} does not exist, you may download it from https://huggingface.co/lj1995/VoiceConversionWebUI/tree/main"
+if not os.access(model_path, os.F_OK):
+    logger.error(
+        f"Feature extraction stopped because {model_path} does not exist. Download it from https://huggingface.co/lj1995/VoiceConversionWebUI/tree/main"
     )
     exit(0)
 
@@ -146,18 +150,35 @@ with safe_globals([Dictionary]):
     )
 model = models[0]
 model = model.to(device)
-printt(f"move model to {device}")
+logger.bind(
+    event="ui_progress",
+    detail_event="feature_model_loaded",
+    stage="extract_feature",
+    current=0,
+    total=1,
+    fraction=0.0,
+    message=f"HuBERT model loaded on {device}. Preparing feature extraction...",
+).info("HuBERT model loaded")
+logger.info(f"Moved HuBERT model to {device}")
 if is_half:
     if device not in ["mps", "cpu"]:
         model = model.half()
 model.eval()
 
-todo = sorted(wavPath.iterdir(), key=lambda p: p.name)[i_part::n_part]
-n = max(1, len(todo) // 10)  # Print up to ten entries
+todo = sorted(wavPath.iterdir(), key=lambda p: p.name)
 if len(todo) == 0:
-    printt("no-feature-todo")
+    logger.bind(event="feature_empty", total=0).info("No features to extract")
 else:
-    printt(f"all-feature-{len(todo)}")
+    logger.bind(
+        event="ui_progress",
+        detail_event="feature_started",
+        stage="extract_feature",
+        current=0,
+        total=len(todo),
+        fraction=0.0,
+        message=f"Starting feature extraction 0/{len(todo)}",
+        version=version,
+    ).info("Starting feature extraction")
     if saved_cfg is None:
         raise RuntimeError("HuBERT checkpoint did not include a saved config")
     normalize = saved_cfg.task.normalize
@@ -166,34 +187,64 @@ else:
             if file.suffix == ".wav":
                 wav_path = wavPath / file.name
                 out_path = outPath / file.with_suffix(".npy").name
+                logger.bind(
+                    event="ui_progress",
+                    detail_event="feature_processing",
+                    stage="extract_feature",
+                    current=idx,
+                    total=len(todo),
+                    fraction=idx / max(len(todo), 1),
+                    message=f"Processing features {idx + 1}/{len(todo)}: {file.name}",
+                    file=file.name,
+                ).info(f"Starting feature extraction for {file.name}")
 
-                if out_path.exists():
-                    continue
+                skipped = out_path.exists()
+                if not skipped:
+                    feats = readwave(wav_path, normalize=normalize)
+                    padding_mask = torch.BoolTensor(feats.shape).fill_(False)
+                    inputs = {
+                        "source": (
+                            feats.half().to(device)
+                            if is_half and device not in ["mps", "cpu"]
+                            else feats.to(device)
+                        ),
+                        "padding_mask": padding_mask.to(device),
+                        "output_layer": 9 if version == "v1" else 12,  # layer 9
+                    }
+                    with torch.no_grad():
+                        logits = model.extract_features(**inputs)
+                        feats = (
+                            model.final_proj(logits[0]) if version == "v1" else logits[0]
+                        )
 
-                feats = readwave(wav_path, normalize=normalize)
-                padding_mask = torch.BoolTensor(feats.shape).fill_(False)
-                inputs = {
-                    "source": (
-                        feats.half().to(device)
-                        if is_half and device not in ["mps", "cpu"]
-                        else feats.to(device)
-                    ),
-                    "padding_mask": padding_mask.to(device),
-                    "output_layer": 9 if version == "v1" else 12,  # layer 9
-                }
-                with torch.no_grad():
-                    logits = model.extract_features(**inputs)
-                    feats = (
-                        model.final_proj(logits[0]) if version == "v1" else logits[0]
-                    )
-
-                feats = feats.squeeze(0).float().cpu().numpy()
-                if np.isnan(feats).sum() == 0:
-                    np.save(out_path, feats, allow_pickle=False)
-                else:
-                    printt(f"{file.name}-contains nan")
-                if idx % n == 0:
-                    printt(f"now-{len(todo)},all-{idx},{file.name},{feats.shape}")
-        except:
-            printt(traceback.format_exc())
-    printt("all-feature-done")
+                    feats = feats.squeeze(0).float().cpu().numpy()
+                    if np.isnan(feats).sum() == 0:
+                        np.save(out_path, feats, allow_pickle=False)
+                    else:
+                        logger.warning(f"{file.name} contains NaN values")
+                logger.bind(
+                    event="ui_progress",
+                    detail_event="feature_progress",
+                    stage="extract_feature",
+                    current=idx + 1,
+                    total=len(todo),
+                    fraction=(idx + 1) / max(len(todo), 1),
+                    message=f"Extracting features {idx + 1}/{len(todo)}: {file.name}",
+                    file=file.name,
+                    skipped=skipped,
+                ).info(f"Extracted features for {file.name}")
+        except Exception:
+            logger.bind(
+                event="ui_progress",
+                detail_event="feature_failed",
+                stage="extract_feature",
+                current=idx + 1,
+                total=len(todo),
+                fraction=(idx + 1) / max(len(todo), 1),
+                message=f"Feature extraction failed at {idx + 1}/{len(todo)}: {file.name}",
+                file=file.name,
+                traceback=traceback.format_exc(),
+            ).exception(f"Failed feature extraction for {file.name}")
+    logger.bind(event="feature_finished", total=len(todo)).info(
+        "Finished feature extraction"
+    )

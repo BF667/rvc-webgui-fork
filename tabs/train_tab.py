@@ -3,21 +3,19 @@ import json
 import os
 import pathlib
 import platform
-import re
 import shlex
 import shutil
 import subprocess
-import threading
 import traceback
 from random import shuffle
 from collections.abc import Generator
-from subprocess import Popen
 from time import sleep
-from typing import Literal
+from typing import Any, Literal
 
 import faiss
 import gradio as gr
 import numpy as np
+from loguru import logger
 from sklearn.cluster import MiniBatchKMeans
 
 import shared
@@ -37,15 +35,87 @@ def change_f0_method(f0method8: str):
     return {"visible": visible, "__type__": "update"}
 
 
-def if_done(done_flag: list[bool], p: Popen):
-    p.wait()
-    done_flag[0] = True
+def read_json_log_records(log_path: pathlib.Path) -> list[dict[str, Any]]:
+    if not log_path.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    for line in log_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            records.append(payload)
+    return records
 
 
-def if_done_multi(done_flag, p_objs):
-    for p_obj in p_objs:
-        p_obj.wait()
-    done_flag[0] = True
+def get_log_record(payload: dict[str, Any]) -> dict[str, Any]:
+    record = payload.get("record")
+    return record if isinstance(record, dict) else {}
+
+
+def get_log_extra(payload: dict[str, Any]) -> dict[str, Any]:
+    extra = get_log_record(payload).get("extra")
+    return extra if isinstance(extra, dict) else {}
+
+
+def get_log_message(payload: dict[str, Any]) -> str:
+    message = get_log_record(payload).get("message")
+    return message if isinstance(message, str) else ""
+
+
+def format_log_messages(records: list[dict[str, Any]]) -> str:
+    return "\n".join(
+        message for message in (get_log_message(record) for record in records) if message
+    )
+
+
+def get_latest_event(
+    records: list[dict[str, Any]], event_name: str
+) -> dict[str, Any] | None:
+    for record in reversed(records):
+        if get_log_extra(record).get("event") == event_name:
+            return record
+    return None
+
+
+def parse_json_log_line(line: str) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def parse_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def parse_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def get_latest_ui_progress(records: list[dict[str, Any]]) -> tuple[float, str]:
+    latest = get_latest_event(records, "ui_progress")
+    if latest is None:
+        return 0.0, "Starting..."
+    extra = get_log_extra(latest)
+    fraction = parse_float(extra.get("fraction"), 0.0)
+    message = extra.get("message")
+    if isinstance(message, str) and message:
+        return fraction, message
+    stage = extra.get("stage")
+    return fraction, str(stage) if stage is not None else "Working..."
+
+
+def is_skip_update(value: object) -> bool:
+    return value == {"__type__": "update"}
 
 
 def preprocess_dataset(
@@ -65,7 +135,7 @@ def preprocess_dataset(
         error_msg = (
             f"Error: Audio directory '{audio_dir}' not found or is not a directory."
         )
-        shared.logger.error(error_msg)
+        logger.error(error_msg)
         yield error_msg
         return
 
@@ -75,12 +145,12 @@ def preprocess_dataset(
         file_names = [path.name for path in audio_dir_path.iterdir() if path.is_file()]
         actual_file_count = len(file_names)
         info_msg = f"Found {actual_file_count} files in audio directory: {audio_dir}"
-        shared.logger.info(info_msg)
+        logger.info(info_msg)
         # yield info_msg # Optionally yield this information to the UI
 
         if actual_file_count == 0:
             warning_msg = f"Warning: No files found in '{audio_dir}'. Preprocessing script will run, but may not find items to process."
-            shared.logger.warning(warning_msg)
+            logger.warning(warning_msg)
             yield warning_msg
             # Update progress to indicate nothing to process, but the step is "complete"
             if progress:
@@ -92,7 +162,7 @@ def preprocess_dataset(
         error_msg = (
             f"Error: Could not access audio directory '{audio_dir}' to count files: {e}"
         )
-        shared.logger.error(error_msg)
+        logger.error(error_msg)
         yield error_msg
         return
     sr_hz = shared.sr_dict[sr]
@@ -108,33 +178,18 @@ def preprocess_dataset(
         str(shared.config.noparallel),
         f"{shared.config.preprocess_per:.1f}",
     ]
-    shared.logger.info("Execute: " + shlex.join(cmd))
-    p = Popen(cmd, cwd=shared.now_dir)
-    # Stupid gr, popen read has to finish entirely before reading it all at once; without gr it normally reads and outputs line by line; have to create an extra text stream to read periodically
-    done = [False]
-    threading.Thread(
-        target=if_done,
-        args=(
-            done,
-            p,
-        ),
-    ).start()
-
+    logger.info(f"Execute: {shlex.join(cmd)}")
+    p = subprocess.Popen(cmd, cwd=shared.now_dir)
     while True:
-        with log_path.open("r") as f:
-            # yield (f.read())
-            file_content = f.read()
-            count = file_content.count("Success")
-            progress(
-                float(count) / max(actual_file_count, 1),
-                desc=f"Processed {count}/{actual_file_count} audio...",
-            )
+        records = read_json_log_records(log_path)
+        fraction, description = get_latest_ui_progress(records)
+        progress(fraction, desc=description)
         sleep(0.5)
-        if done[0]:
+        if p.poll() is not None:
             break
-    with log_path.open("r") as f:
-        log = f.read()
-    shared.logger.info(log)
+    records = read_json_log_records(log_path)
+    log = format_log_messages(records)
+    logger.info(f"Preprocess stage completed for {exp_dir}")
     yield log
 
 
@@ -165,39 +220,6 @@ def preprocess_meta(
         yield update
 
 
-def parse_f0_feature_log(content: str) -> tuple[int, int]:
-    max_now = 0
-    max_all = 1
-    # Regex to capture the numbers after "now-" and "all-"
-    # Pattern breakdown:
-    # f0ing,       # Literal string "f0ing,"
-    # now-(\d+)    # "now-" followed by one or more digits (captured as group 1)
-    # ,all-(\d+)   # ",all-" followed by one or more digits (captured as group 2)
-    # The rest of the line (e.g., ",-filepath") is ignored by this regex.
-    pattern = re.compile(r"f0ing,now-(\d+),all-(\d+)")
-
-    for line in content.splitlines():
-        match = pattern.search(line)
-        if match:
-            try:
-                current_now_str = match.group(1)
-                current_all_str = match.group(2)
-
-                current_now = int(current_now_str)
-                current_all = int(current_all_str)
-
-                if current_now > max_now:
-                    max_now = current_now
-
-                if current_all > max_all:
-                    max_all = current_all
-            except ValueError:
-                print(f"Warning: Could not parse numbers from line: {line}")
-                pass
-
-    return max_now, max_all
-
-
 # but2.click(extract_f0,[gpus6,np7,f0method8,if_f0_3,trainset_dir4],[info2])
 def extract_f0_feature(
     gpus: str,
@@ -209,138 +231,84 @@ def extract_f0_feature(
     gpus_rmvpe: str,
     progress: gr.Progress = gr.Progress(),
 ) -> Generator[str, None, None]:
-
-    def update_progress(content: str):
-        now, all = parse_f0_feature_log(content)
-        progress(float(now) / all, desc=f"{now}/{all} Features extracted...")
-
     gpu_ids = gpus.split("-")
-    os.makedirs("%s/logs/%s" % (shared.now_dir, exp_dir), exist_ok=True)
-    f = open("%s/logs/%s/extract_f0_feature.log" % (shared.now_dir, exp_dir), "w")
-    f.close()
+    log_dir = pathlib.Path(shared.now_dir) / "logs" / exp_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "extract_f0_feature.log"
+    log_path.write_text("")
     if if_f0:
         if f0method != "rmvpe_gpu":
-            cmd = (
-                '"%s" infer/modules/train/extract/extract_f0_print.py "%s/logs/%s" %s %s'
-                % (
-                    shared.config.python_cmd,
-                    shared.now_dir,
-                    exp_dir,
-                    n_p,
-                    f0method,
-                )
-            )
-            shared.logger.info("Execute: " + cmd)
-            p = Popen(
-                cmd, shell=True, cwd=shared.now_dir
-            )  # , stdin=PIPE, stdout=PIPE,stderr=PIPE
-            # Stupid gr, popen read has to finish entirely before reading it all at once; without gr it normally reads and outputs line by line; have to create an extra text stream to read periodically
-            done = [False]
-            threading.Thread(
-                target=if_done,
-                args=(
-                    done,
-                    p,
-                ),
-            ).start()
+            cmd = [
+                shared.config.python_cmd,
+                "infer/modules/train/extract/extract_f0_print.py",
+                str(log_dir),
+                str(n_p),
+                f0method,
+            ]
         else:
             if gpus_rmvpe != "-":
-                gpus_rmvpe_ids = gpus_rmvpe.split("-")
-                length = len(gpus_rmvpe_ids)
-                ps = []
-                for idx, n_g in enumerate(gpus_rmvpe_ids):
-                    cmd = (
-                        '"%s" infer/modules/train/extract/extract_f0_rmvpe.py %s %s %s "%s/logs/%s" %s '
-                        % (
-                            shared.config.python_cmd,
-                            length,
-                            idx,
-                            n_g,
-                            shared.now_dir,
-                            exp_dir,
-                            shared.config.is_half,
-                        )
-                    )
-                    shared.logger.info("Execute: " + cmd)
-                    p = Popen(
-                        cmd, shell=True, cwd=shared.now_dir
-                    )  # , shell=True, stdin=PIPE, stdout=PIPE, stderr=PIPE, cwd=now_dir
-                    ps.append(p)
-                done = [False]
-                threading.Thread(
-                    target=if_done_multi,  #
-                    args=(
-                        done,
-                        ps,
-                    ),
-                ).start()
+                selected_gpu = gpus_rmvpe.split("-")[0]
+                cmd = [
+                    shared.config.python_cmd,
+                    "infer/modules/train/extract/extract_f0_rmvpe.py",
+                    selected_gpu,
+                    str(log_dir),
+                    str(shared.config.is_half),
+                ]
             else:
-                done = [True]
+                warning = "RMVPE GPU extraction was selected without a GPU id."
+                logger.warning(warning)
+                yield warning
+                return
+        logger.info(f"Execute: {shlex.join(cmd)}")
+        p = subprocess.Popen(cmd, cwd=shared.now_dir)
         while True:
-            with open(
-                "%s/logs/%s/extract_f0_feature.log" % (shared.now_dir, exp_dir), "r"
-            ) as f:
-                update_progress(f.read())
-            sleep(1)
-            if done[0]:
+            records = read_json_log_records(log_path)
+            fraction, description = get_latest_ui_progress(records)
+            progress(fraction, desc=description)
+            sleep(0.2)
+            if p.poll() is not None:
                 break
-        with open(
-            "%s/logs/%s/extract_f0_feature.log" % (shared.now_dir, exp_dir), "r"
-        ) as f:
-            log = f.read()
-        shared.logger.info(log)
+        if p.wait() != 0:
+            yield "F0 extraction failed."
+            return
     # Open multiple processes for different parts
-    """
-    n_part=int(sys.argv[1])
-    i_part=int(sys.argv[2])
-    i_gpu=sys.argv[3]
-    exp_dir=sys.argv[4]
-    os.environ["CUDA_VISIBLE_DEVICES"]=str(i_gpu)
-    """
-    length = len(gpu_ids)
-    ps = []
-    for idx, n_g in enumerate(gpu_ids):
-        cmd = (
-            '"%s" infer/modules/train/extract_feature_print.py %s %s %s %s "%s/logs/%s" %s %s'
-            % (
-                shared.config.python_cmd,
-                shared.config.device,
-                length,
-                idx,
-                n_g,
-                shared.now_dir,
-                exp_dir,
-                version19,
-                shared.config.is_half,
-            )
+    if len(gpu_ids) > 1:
+        logger.warning(
+            f"Multiple GPU ids were provided for feature extraction ({gpus}); using only {gpu_ids[0]} to avoid log races."
         )
-        shared.logger.info("Execute: " + cmd)
-        p = Popen(
-            cmd, shell=True, cwd=shared.now_dir
-        )  # , shell=True, stdin=PIPE, stdout=PIPE, stderr=PIPE, cwd=now_dir
-        ps.append(p)
-    # Stupid gr, popen read has to finish entirely before reading it all at once; without gr it normally reads and outputs line by line; have to create an extra text stream to read periodically
-    done = [False]
-    threading.Thread(
-        target=if_done_multi,
-        args=(
-            done,
-            ps,
-        ),
-    ).start()
+    selected_gpu = gpu_ids[0] if gpu_ids and gpu_ids[0] else ""
+    if selected_gpu:
+        cmd = [
+            shared.config.python_cmd,
+            "infer/modules/train/extract_feature_print.py",
+            shared.config.device,
+            selected_gpu,
+            str(log_dir),
+            version19,
+            str(shared.config.is_half),
+        ]
+    else:
+        cmd = [
+            shared.config.python_cmd,
+            "infer/modules/train/extract_feature_print.py",
+            shared.config.device,
+            str(log_dir),
+            version19,
+            str(shared.config.is_half),
+        ]
+    logger.info(f"Execute: {shlex.join(cmd)}")
+    p = subprocess.Popen(cmd, cwd=shared.now_dir)
     while True:
-        with open(
-            "%s/logs/%s/extract_f0_feature.log" % (shared.now_dir, exp_dir), "r"
-        ) as f:
-            update_progress(f.read())
-        sleep(1)
-        if done[0]:
+        records = read_json_log_records(log_path)
+        fraction, description = get_latest_ui_progress(records)
+        progress(fraction, desc=description)
+        sleep(0.2)
+        if p.poll() is not None:
             break
-    with open(
-        "%s/logs/%s/extract_f0_feature.log" % (shared.now_dir, exp_dir), "r"
-    ) as f:
-        log = f.read()
-    shared.logger.info(log)
+    records = read_json_log_records(log_path)
+    log = format_log_messages(records)
+    logger.info(f"Feature extraction stage completed for {exp_dir}")
     yield log
 
 
@@ -352,18 +320,12 @@ def get_pretrained_models(path_str: str, f0_str: str, sr2: SampleRate):
         "assets/pretrained%s/%sD%s.pth" % (path_str, f0_str, sr2), os.F_OK
     )
     if not if_pretrained_generator_exist:
-        shared.logger.warning(
-            "assets/pretrained%s/%sG%s.pth not exist, will not use pretrained model",
-            path_str,
-            f0_str,
-            sr2,
+        logger.warning(
+            f"assets/pretrained{path_str}/{f0_str}G{sr2}.pth does not exist, so the pretrained generator will not be used"
         )
     if not if_pretrained_discriminator_exist:
-        shared.logger.warning(
-            "assets/pretrained%s/%sD%s.pth not exist, will not use pretrained model",
-            path_str,
-            f0_str,
-            sr2,
+        logger.warning(
+            f"assets/pretrained{path_str}/{f0_str}D{sr2}.pth does not exist, so the pretrained discriminator will not be used"
         )
     return (
         (
@@ -408,30 +370,6 @@ def change_f0(if_f0_3: bool, sr2, version19):  # f0method8,pretrained_G14,pretra
         {"visible": if_f0_3, "__type__": "update"},
         *get_pretrained_models(path_str, "f0" if if_f0_3 == True else "", sr2),
     )
-
-
-def parse_epoch_from_train_log_line(line: str) -> int | None:
-    """
-    Parse a single log line and extract the current epoch number if present.
-
-    Args:
-        line (bytes): A single log line in bytes.
-
-    Returns:
-        Optional[int]: The epoch number if found, otherwise None.
-    """
-
-    # Pattern 1: Train Epoch: X [...]
-    match = re.search(r"Train Epoch:\s*(\d+)", line)
-    if match:
-        return int(match.group(1))
-
-    # Pattern 2: ====> Epoch: X [...]
-    match = re.search(r"====> Epoch:\s*(\d+)", line)
-    if match:
-        return int(match.group(1))
-
-    return None
 
 
 def click_train(
@@ -527,14 +465,14 @@ def click_train(
     shuffle(opt)
     with open("%s/filelist.txt" % exp_dir, "w") as f:
         f.write("\n".join(opt))
-    shared.logger.debug("Write filelist done")
+    logger.debug("Write filelist done")
     # Generate config# No need to generate config
     # cmd = python_cmd + " train_nsf_sim_cache_sid_load_pretrain.py -e mi-test -sr 40k -f0 1 -bs 4 -g 0 -te 10 -se 5 -pg pretrained/f0G40k.pth -pd pretrained/f0D40k.pth -l 1 -c 0"
-    shared.logger.info("Use gpus: %s", str(gpus16))
+    logger.info(f"Using GPU setting: {gpus16}")
     if pretrained_G14 == "":
-        shared.logger.info("No pretrained Generator")
+        logger.info("No pretrained Generator")
     if pretrained_D15 == "":
-        shared.logger.info("No pretrained Discriminator")
+        logger.info("No pretrained Discriminator")
     if version19 == "v1" or sr2 == "40k":
         config_path = "v1/%s.json" % sr2
     else:
@@ -550,66 +488,64 @@ def click_train(
                 sort_keys=True,
             )
             f.write("\n")
-    if gpus16:
-        cmd = (
-            '"%s" infer/modules/train/train.py -e "%s" -sr %s -f0 %s -bs %s -g %s -te %s -se %s %s %s -l %s -c %s -sw %s -v %s'
-            % (
-                shared.config.python_cmd,
-                exp_dir1,
-                sr2,
-                1 if if_f0_3 else 0,
-                batch_size12,
-                gpus16,
-                total_epoch11,
-                save_epoch10,
-                "-pg %s" % pretrained_G14 if pretrained_G14 != "" else "",
-                "-pd %s" % pretrained_D15 if pretrained_D15 != "" else "",
-                1 if if_save_latest13 == i18n("Yes") else 0,
-                1 if if_cache_gpu17 == i18n("Yes") else 0,
-                1 if if_save_every_weights18 == i18n("Yes") else 0,
-                version19,
-            )
+    selected_gpu = gpus16.split("-")[0] if gpus16 else ""
+    if gpus16 and "-" in gpus16:
+        logger.warning(
+            f"Multiple GPU ids were provided for training ({gpus16}); using only {selected_gpu} to avoid subprocess races."
         )
-    else:
-        cmd = (
-            '"%s" infer/modules/train/train.py -e "%s" -sr %s -f0 %s -bs %s -te %s -se %s %s %s -l %s -c %s -sw %s -v %s'
-            % (
-                shared.config.python_cmd,
-                exp_dir1,
-                sr2,
-                1 if if_f0_3 else 0,
-                batch_size12,
-                total_epoch11,
-                save_epoch10,
-                "-pg %s" % pretrained_G14 if pretrained_G14 != "" else "",
-                "-pd %s" % pretrained_D15 if pretrained_D15 != "" else "",
-                1 if if_save_latest13 == shared.i18n("Yes") else 0,
-                1 if if_cache_gpu17 == shared.i18n("Yes") else 0,
-                1 if if_save_every_weights18 == shared.i18n("Yes") else 0,
-                version19,
-            )
-        )
-    shared.logger.info("Execute: " + cmd)
-    current_epoch = 0
-    # p = Popen(cmd, shell=True, cwd=shared.now_dir)
-    p = Popen(cmd, shell=True, cwd=shared.now_dir, stdout=subprocess.PIPE)
+    cmd = [
+        shared.config.python_cmd,
+        "infer/modules/train/train.py",
+        "-e",
+        exp_dir1,
+        "-sr",
+        sr2,
+        "-f0",
+        str(1 if if_f0_3 else 0),
+        "-bs",
+        str(batch_size12),
+        "-te",
+        str(total_epoch11),
+        "-se",
+        str(save_epoch10),
+        "-l",
+        str(1 if if_save_latest13 == i18n("Yes") else 0),
+        "-c",
+        str(1 if if_cache_gpu17 == i18n("Yes") else 0),
+        "-sw",
+        str(1 if if_save_every_weights18 == i18n("Yes") else 0),
+        "-v",
+        version19,
+    ]
+    if selected_gpu:
+        cmd.extend(["-g", selected_gpu])
+    if pretrained_G14 != "":
+        cmd.extend(["-pg", pretrained_G14])
+    if pretrained_D15 != "":
+        cmd.extend(["-pd", pretrained_D15])
+    logger.info(f"Execute: {shlex.join(cmd)}")
+    train_log_path = pathlib.Path(exp_dir) / "train.log"
+    p = subprocess.Popen(cmd, cwd=shared.now_dir, stdout=subprocess.PIPE, text=True)
     if p.stdout is None:
         raise RuntimeError("Training process stdout was not captured")
     while True:
-        line_bytes = p.stdout.readline()
-        if not line_bytes:
+        line = p.stdout.readline()
+        if not line:
             break
-        # the real code does filtering here
-        # print(f"Line: {line}")
-        line = line_bytes.decode("utf-8", errors="ignore")
-        shared.logger.info(f"{line}")
-
-        current_epoch = parse_epoch_from_train_log_line(line) or current_epoch
-        progress(current_epoch / total_epoch11, desc="Training...")
+        payload = parse_json_log_line(line)
+        if payload is None:
+            continue
+        extra = get_log_extra(payload)
+        event = extra.get("event")
+        if event == "ui_progress":
+            fraction = parse_float(extra.get("fraction"), 0.0)
+            description = str(extra.get("message", "Training..."))
+            progress(fraction, desc=description)
 
     return_code = p.wait()
-    # return f"Training finished with exit code {return_code}. You can view the training log in the console or train.log in the experiment folder."
-    yield f"Training finished with exit code {return_code}."
+    train_records = read_json_log_records(train_log_path)
+    summary = format_log_messages(train_records)
+    yield f"Training finished with exit code {return_code}.\n{summary}".strip()
 
 
 def train_index(exp_dir1: str, version19: str, progress=gr.Progress()):
@@ -656,7 +592,7 @@ def train_index(exp_dir1: str, version19: str, progress=gr.Progress()):
             )
         except:
             info = traceback.format_exc()
-            shared.logger.info(info)
+            logger.info(info)
             infos.append(info)
             yield "\n".join(infos)
 
@@ -739,28 +675,32 @@ def one_click_training(
     version19,
     gpus_rmvpe,
 ):
-    infos: list[str] = []
-
-    def get_info_str(strr):
-        infos.append(strr)
-        return "\n".join(infos)
+    final_sections: list[str] = []
 
     # step1: Process data
-    yield get_info_str(shared.i18n("step1: processing data..."))
-    [get_info_str(_) for _ in preprocess_dataset(trainset_dir4, exp_dir1, sr2, np7)]
+    progress = gr.Progress()
+    progress(0.0, desc=shared.i18n("step1: processing data..."))
+    for update in preprocess_dataset(trainset_dir4, exp_dir1, sr2, np7):
+        if not is_skip_update(update):
+            final_sections.append(str(update))
 
     # step2a: Extract pitch
-    yield get_info_str(shared.i18n("step2: extracting feature & pitch"))
-    [
-        get_info_str(_)
-        for _ in extract_f0_feature(
-            gpus16, np7, f0method8, if_f0_3, exp_dir1, version19, gpus_rmvpe
-        )
-    ]
+    progress(0.0, desc=shared.i18n("step2: extracting feature & pitch"))
+    for update in extract_f0_feature(
+        gpus16,
+        np7,
+        f0method8,
+        if_f0_3,
+        exp_dir1,
+        version19,
+        gpus_rmvpe,
+    ):
+        if not is_skip_update(update):
+            final_sections.append(str(update))
 
     # step3a: Train model
-    yield get_info_str(shared.i18n("step3a: Training model"))
-    click_train(
+    progress(0.0, desc=shared.i18n("step3a: Training model"))
+    for update in click_train(
         exp_dir1,
         sr2,
         if_f0_3,
@@ -775,14 +715,19 @@ def one_click_training(
         if_cache_gpu17,
         if_save_every_weights18,
         version19,
-    )
-    yield get_info_str(
+    ):
+        if not is_skip_update(update):
+            final_sections.append(str(update))
+    final_sections.append(
         i18n("Training finished, you can view the console training log or train.log in the experiment folder")
     )
 
     # step3b: Train index
-    [get_info_str(_) for _ in train_index(exp_dir1, version19)]
-    yield get_info_str(i18n("Full process completed!"))
+    progress(0.0, desc=i18n("Training index..."))
+    for update in train_index(exp_dir1, version19):
+        final_sections.append(update)
+    final_sections.append(i18n("Full process completed!"))
+    yield "\n\n".join(section for section in final_sections if section).strip()
 
 
 def create_train_tab():
