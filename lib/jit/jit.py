@@ -3,7 +3,7 @@ from io import BytesIO
 from collections import OrderedDict
 from pathlib import Path
 import os
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import torch
 
@@ -18,7 +18,7 @@ def load_pickle(path: Path) -> dict:
         return pickle.load(f)
 
 
-def save_pickle(ckpt: dict, save_path: Path):
+def save_pickle(ckpt: dict[str, Any], save_path: Path):
     with open(save_path, "wb") as f:
         pickle.dump(ckpt, f)
 

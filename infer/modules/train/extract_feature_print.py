@@ -7,9 +7,6 @@ from typing import Literal
 from tap import Tap
 from loguru import logger
 
-os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
-os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
-
 BoolString = Literal["True", "False", "true", "false", "1", "0"]
 
 
@@ -75,8 +72,6 @@ import torch.nn.functional as F
 device = "cpu"
 if torch.cuda.is_available():
     device = "cuda"
-elif torch.backends.mps.is_available():
-    device = "mps"
 
 logger.remove()
 logger.add(
@@ -161,7 +156,7 @@ logger.bind(
 ).info("HuBERT model loaded")
 logger.info(f"Moved HuBERT model to {device}")
 if is_half:
-    if device not in ["mps", "cpu"]:
+    if device != "cpu":
         model = model.half()
 model.eval()
 
@@ -205,7 +200,7 @@ else:
                     inputs = {
                         "source": (
                             feats.half().to(device)
-                            if is_half and device not in ["mps", "cpu"]
+                            if is_half and device != "cpu"
                             else feats.to(device)
                         ),
                         "padding_mask": padding_mask.to(device),

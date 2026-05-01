@@ -1,5 +1,6 @@
 import math
 import logging
+from collections.abc import Sequence
 from typing import cast
 
 logger = logging.getLogger(__name__)
@@ -19,9 +20,6 @@ from infer.lib.infer_pack.commons import get_padding, init_weights
 def remove_weight_norm(module: nn.Module, name: str = "weight") -> nn.Module:
     remove_parametrizations(module, name, leave_parametrized=True)
     return module
-
-has_xpu = bool(hasattr(torch, "xpu") and torch.xpu.is_available())
-
 
 class TextEncoder(nn.Module):
     def __init__(
@@ -611,26 +609,26 @@ sr2sr = {
 class SynthesizerTrnMs256NSFsid(nn.Module):
     def __init__(
         self,
-        spec_channels,
-        segment_size,
-        inter_channels,
-        hidden_channels,
-        filter_channels,
-        n_heads,
-        n_layers,
-        kernel_size,
-        p_dropout,
-        resblock,
-        resblock_kernel_sizes,
-        resblock_dilation_sizes,
-        upsample_rates,
-        upsample_initial_channel,
-        upsample_kernel_sizes,
-        spk_embed_dim,
-        gin_channels,
-        sr,
-        **kwargs,
-    ):
+        spec_channels: int,
+        segment_size: int,
+        inter_channels: int,
+        hidden_channels: int,
+        filter_channels: int,
+        n_heads: int,
+        n_layers: int,
+        kernel_size: int,
+        p_dropout: float,
+        resblock: str,
+        resblock_kernel_sizes: Sequence[int],
+        resblock_dilation_sizes: Sequence[Sequence[int]],
+        upsample_rates: Sequence[int],
+        upsample_initial_channel: int,
+        upsample_kernel_sizes: Sequence[int],
+        spk_embed_dim: int,
+        gin_channels: int,
+        sr: str | int,
+        **kwargs: object,
+    ) -> None:
         super(SynthesizerTrnMs256NSFsid, self).__init__()
         if isinstance(sr, str):
             sr = sr2sr[sr]
@@ -672,7 +670,7 @@ class SynthesizerTrnMs256NSFsid(nn.Module):
             upsample_kernel_sizes,
             gin_channels=gin_channels,
             sr=sr,
-            is_half=kwargs["is_half"],
+            is_half=cast(bool, kwargs["is_half"]),
         )
         self.enc_q = PosteriorEncoder(
             spec_channels,
@@ -788,26 +786,26 @@ class SynthesizerTrnMs256NSFsid(nn.Module):
 class SynthesizerTrnMs768NSFsid(SynthesizerTrnMs256NSFsid):
     def __init__(
         self,
-        spec_channels,
-        segment_size,
-        inter_channels,
-        hidden_channels,
-        filter_channels,
-        n_heads,
-        n_layers,
-        kernel_size,
-        p_dropout,
-        resblock,
-        resblock_kernel_sizes,
-        resblock_dilation_sizes,
-        upsample_rates,
-        upsample_initial_channel,
-        upsample_kernel_sizes,
-        spk_embed_dim,
-        gin_channels,
-        sr,
-        **kwargs,
-    ):
+        spec_channels: int,
+        segment_size: int,
+        inter_channels: int,
+        hidden_channels: int,
+        filter_channels: int,
+        n_heads: int,
+        n_layers: int,
+        kernel_size: int,
+        p_dropout: float,
+        resblock: str,
+        resblock_kernel_sizes: Sequence[int],
+        resblock_dilation_sizes: Sequence[Sequence[int]],
+        upsample_rates: Sequence[int],
+        upsample_initial_channel: int,
+        upsample_kernel_sizes: Sequence[int],
+        spk_embed_dim: int,
+        gin_channels: int,
+        sr: str | int,
+        **kwargs: object,
+    ) -> None:
         super(SynthesizerTrnMs768NSFsid, self).__init__(
             spec_channels,
             segment_size,
@@ -845,26 +843,26 @@ class SynthesizerTrnMs768NSFsid(SynthesizerTrnMs256NSFsid):
 class SynthesizerTrnMs256NSFsid_nono(nn.Module):
     def __init__(
         self,
-        spec_channels,
-        segment_size,
-        inter_channels,
-        hidden_channels,
-        filter_channels,
-        n_heads,
-        n_layers,
-        kernel_size,
-        p_dropout,
-        resblock,
-        resblock_kernel_sizes,
-        resblock_dilation_sizes,
-        upsample_rates,
-        upsample_initial_channel,
-        upsample_kernel_sizes,
-        spk_embed_dim,
-        gin_channels,
-        sr=None,
-        **kwargs,
-    ):
+        spec_channels: int,
+        segment_size: int,
+        inter_channels: int,
+        hidden_channels: int,
+        filter_channels: int,
+        n_heads: int,
+        n_layers: int,
+        kernel_size: int,
+        p_dropout: float,
+        resblock: str,
+        resblock_kernel_sizes: Sequence[int],
+        resblock_dilation_sizes: Sequence[Sequence[int]],
+        upsample_rates: Sequence[int],
+        upsample_initial_channel: int,
+        upsample_kernel_sizes: Sequence[int],
+        spk_embed_dim: int,
+        gin_channels: int,
+        sr: str | int | None = None,
+        **kwargs: object,
+    ) -> None:
         super(SynthesizerTrnMs256NSFsid_nono, self).__init__()
         self.spec_channels = spec_channels
         self.inter_channels = inter_channels
@@ -958,7 +956,14 @@ class SynthesizerTrnMs256NSFsid_nono(nn.Module):
         return self
 
     @torch.jit.ignore
-    def forward(self, phone, phone_lengths, y, y_lengths, ds):  # Here ds is the id, [bs,1]
+    def forward(
+        self,
+        phone: torch.Tensor,
+        phone_lengths: torch.Tensor,
+        y: torch.Tensor,
+        y_lengths: torch.Tensor,
+        ds: torch.Tensor,
+    ):  # Here ds is the id, [bs,1]
         g = self.emb_g(ds).unsqueeze(-1)  # [b, 256, 1]## 1 is t, broadcasted
         m_p, logs_p, x_mask = self.enc_p(phone, None, phone_lengths)
         z, m_q, logs_q, y_mask = self.enc_q(y, y_lengths, g=g)
@@ -1003,26 +1008,26 @@ class SynthesizerTrnMs256NSFsid_nono(nn.Module):
 class SynthesizerTrnMs768NSFsid_nono(SynthesizerTrnMs256NSFsid_nono):
     def __init__(
         self,
-        spec_channels,
-        segment_size,
-        inter_channels,
-        hidden_channels,
-        filter_channels,
-        n_heads,
-        n_layers,
-        kernel_size,
-        p_dropout,
-        resblock,
-        resblock_kernel_sizes,
-        resblock_dilation_sizes,
-        upsample_rates,
-        upsample_initial_channel,
-        upsample_kernel_sizes,
-        spk_embed_dim,
-        gin_channels,
-        sr=None,
-        **kwargs,
-    ):
+        spec_channels: int,
+        segment_size: int,
+        inter_channels: int,
+        hidden_channels: int,
+        filter_channels: int,
+        n_heads: int,
+        n_layers: int,
+        kernel_size: int,
+        p_dropout: float,
+        resblock: str,
+        resblock_kernel_sizes: Sequence[int],
+        resblock_dilation_sizes: Sequence[Sequence[int]],
+        upsample_rates: Sequence[int],
+        upsample_initial_channel: int,
+        upsample_kernel_sizes: Sequence[int],
+        spk_embed_dim: int,
+        gin_channels: int,
+        sr: str | int | None = None,
+        **kwargs: object,
+    ) -> None:
         super(SynthesizerTrnMs768NSFsid_nono, self).__init__(
             spec_channels,
             segment_size,
@@ -1212,12 +1217,7 @@ class DiscriminatorP(torch.nn.Module):
         b, c, t = x.shape
         if t % self.period != 0:  # pad first
             n_pad = self.period - (t % self.period)
-            if has_xpu and x.dtype == torch.bfloat16:
-                x = F.pad(x.to(dtype=torch.float16), (0, n_pad), "reflect").to(
-                    dtype=torch.bfloat16
-                )
-            else:
-                x = F.pad(x, (0, n_pad), "reflect")
+            x = F.pad(x, (0, n_pad), "reflect")
             t = t + n_pad
         x = x.view(b, c, t // self.period, self.period)
 

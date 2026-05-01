@@ -2,11 +2,17 @@ from lib.f0 import PitchMethod
 import traceback
 import logging
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import cast
 import gradio as gr
 import resampy
 
 from configs.config import Config
+from lib.types import (
+    RvcCheckpoint,
+    synthesizer_config_args,
+    synthesizer_config_args_with_sr,
+    synthesizer_target_sr,
+)
 
 logger = logging.getLogger(__name__)
 import numpy as np
@@ -52,21 +58,20 @@ def resample_audio(
 class VC:
     def __init__(self: "VC", config: Config):
         # self.config = config
-        self.n_spk: Optional[int] = None
-        self.tgt_sr: Optional[int] = None
-        self.net_g: Optional[
-            Union[
-                SynthesizerTrnMs256NSFsid,
-                SynthesizerTrnMs256NSFsid_nono,
-                SynthesizerTrnMs768NSFsid,
-                SynthesizerTrnMs768NSFsid_nono,
-            ]
-        ] = None
-        self.pipeline: Optional[Pipeline] = None
-        self.cpt: dict[str, Any] | None = None
+        self.n_spk: int | None = None
+        self.tgt_sr: int | None = None
+        self.net_g: (
+            SynthesizerTrnMs256NSFsid
+            | SynthesizerTrnMs256NSFsid_nono
+            | SynthesizerTrnMs768NSFsid
+            | SynthesizerTrnMs768NSFsid_nono
+            | None
+        ) = None
+        self.pipeline: Pipeline | None = None
+        self.cpt: RvcCheckpoint | None = None
         self.version: str = "UNKNOWN"
-        self.if_f0: Optional[int] = None
-        self.hubert_model: Optional[HubertModel] = None
+        self.if_f0: int | None = None
+        self.hubert_model: HubertModel | None = None
         self.config: Config = config
 
         # ## Real-time inference state ##
@@ -79,7 +84,7 @@ class VC:
             self.config.device
         )
 
-    def get_vc(self: "VC", sid: Optional[str], *to_return_protect):
+    def get_vc(self: "VC", sid: str | None, *to_return_protect):
         if sid is None or sid == "":
             logger.warning("No SID")
             return (
@@ -114,17 +119,23 @@ class VC:
                     if self.version == "v1":
                         if self.if_f0 == 1:
                             self.net_g = SynthesizerTrnMs256NSFsid(
-                                *cpt["config"], is_half=self.config.is_half
+                                *synthesizer_config_args_with_sr(cpt["config"]),
+                                is_half=self.config.is_half,
                             )
                         else:
-                            self.net_g = SynthesizerTrnMs256NSFsid_nono(*cpt["config"])
+                            self.net_g = SynthesizerTrnMs256NSFsid_nono(
+                                *synthesizer_config_args(cpt["config"])
+                            )
                     elif self.version == "v2":
                         if self.if_f0 == 1:
                             self.net_g = SynthesizerTrnMs768NSFsid(
-                                *cpt["config"], is_half=self.config.is_half
+                                *synthesizer_config_args_with_sr(cpt["config"]),
+                                is_half=self.config.is_half,
                             )
                         else:
-                            self.net_g = SynthesizerTrnMs768NSFsid_nono(*cpt["config"])
+                            self.net_g = SynthesizerTrnMs768NSFsid_nono(
+                                *synthesizer_config_args(cpt["config"])
+                            )
                 self.net_g = None
                 self.cpt = None
                 if torch.cuda.is_available():
@@ -141,8 +152,10 @@ class VC:
         person = shared.weight_root / sid
         logger.info(f"Loading: {person}")
 
-        self.cpt = torch.load(person, map_location="cpu", weights_only=False)
-        self.tgt_sr = self.cpt["config"][-1]
+        self.cpt = cast(
+            RvcCheckpoint, torch.load(person, map_location="cpu", weights_only=False)
+        )
+        self.tgt_sr = synthesizer_target_sr(self.cpt["config"])
         self.cpt["config"][-3] = self.cpt["weight"]["emb_g.weight"].shape[0]  # n_spk
         self.if_f0 = self.cpt.get("f0", 1)
         self.version = self.cpt.get("version", "v1")
@@ -156,7 +169,10 @@ class VC:
 
         self.net_g = synthesizer_class.get(
             (self.version, self.if_f0), SynthesizerTrnMs256NSFsid
-        )(*self.cpt["config"], is_half=self.config.is_half)
+        )(
+            *synthesizer_config_args_with_sr(self.cpt["config"]),
+            is_half=self.config.is_half,
+        )
 
         del self.net_g.enc_q
 
@@ -174,7 +190,7 @@ class VC:
         else:
             self.net_g = self.net_g.float()
 
-        self.pipeline = Pipeline(self.tgt_sr, self.config)
+        self.pipeline = Pipeline(synthesizer_target_sr(self.cpt["config"]), self.config)
         # n_spk = self.cpt["config"][-3]
         index = {"value": get_index_path_from_model(sid), "__type__": "update"}
         logger.info(f"Select index: {index['value']}")
@@ -192,10 +208,10 @@ class VC:
 
     def vc_single(
         self: "VC",
-        sr_and_audio: Optional[Tuple[int, np.ndarray]],
+        sr_and_audio: tuple[int, np.ndarray] | None,
         f0_up_key: int,
         f0_method: PitchMethod,
-        file_index: Optional[str],  # Path to .index file from dropdown
+        file_index: str | None,  # Path to .index file from dropdown
         index_rate: float,
         resample_sr: int,  # Target sample rate
         rms_mix_rate: float,
@@ -274,7 +290,7 @@ class VC:
         sr_and_audio: tuple[int, np.ndarray] | None,
         f0_up_key: int,
         f0_method: PitchMethod,
-        file_index: Optional[str],  # Path to .index file from dropdown
+        file_index: str | None,  # Path to .index file from dropdown
         index_rate: float,
         resample_sr: int,  # Target sample rate
         rms_mix_rate: float,

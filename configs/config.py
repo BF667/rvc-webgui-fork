@@ -132,18 +132,6 @@ class Config:
             cmd_opts.noautoopen,
         )
 
-    # has_mps is only available in nightly pytorch (for now) and MasOS 12.3+.
-    # check `getattr` and try it for compatibility
-    @staticmethod
-    def has_mps() -> bool:
-        if not torch.backends.mps.is_available():
-            return False
-        try:
-            torch.zeros(1).to(torch.device("mps"))
-            return True
-        except Exception:
-            return False
-
     def use_fp32_config(self):
         for config_file in version_config_list:
             self.json_config[config_file].setdefault("train", {})["fp16_run"] = False
@@ -184,11 +172,6 @@ class Config:
             )
             if self.gpu_mem <= 4:
                 self.preprocess_per = 3.0
-        elif self.has_mps():
-            logger.info("No supported Nvidia GPU found")
-            self.device = self.instead = "mps"
-            self.is_half = False
-            self.use_fp32_config()
         else:
             logger.info("No supported Nvidia GPU found")
             self.device = self.instead = "cpu"

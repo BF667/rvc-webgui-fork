@@ -319,8 +319,7 @@ class Pipeline:
             )
             pitch_np = pitch_np[:p_len]
             pitchf_np = pitchf_np[:p_len]
-            if "mps" not in str(self.device) or "xpu" not in str(self.device):
-                pitchf_np = pitchf_np.astype(np.float32)
+            pitchf_np = pitchf_np.astype(np.float32)
             pitch = torch.tensor(pitch_np, device=self.device).unsqueeze(0).long()
             pitchf = torch.tensor(pitchf_np, device=self.device).unsqueeze(0).float()
         t2 = ttime()

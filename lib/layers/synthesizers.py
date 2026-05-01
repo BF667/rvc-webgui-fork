@@ -25,7 +25,7 @@ class SynthesizerTrnMsNSFsid(nn.Module):
         n_heads: int,
         n_layers: int,
         kernel_size: int,
-        p_dropout: int,
+        p_dropout: float,
         resblock: str,
         resblock_kernel_sizes: Sequence[int],
         resblock_dilation_sizes: Sequence[Sequence[int]],

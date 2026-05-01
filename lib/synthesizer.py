@@ -1,15 +1,21 @@
-from collections import OrderedDict
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
 import torch
 
 from .layers.synthesizers import SynthesizerTrnMsNSFsid
 from .jit import load_inputs, export_jit_model, save_pickle
-from .types import FileLike
+from .types import (
+    FileLike,
+    JitRvcCheckpoint,
+    RvcCheckpoint,
+    synthesizer_config_args,
+)
 
 
-def get_synthesizer(cpt: OrderedDict, device=torch.device("cpu")):
+def get_synthesizer(
+    cpt: RvcCheckpoint, device: int | str | torch.device = torch.device("cpu")
+) -> tuple[SynthesizerTrnMsNSFsid, RvcCheckpoint]:
     cpt["config"][-3] = cpt["weight"]["emb_g.weight"].shape[0]
     if_f0 = cpt.get("f0", 1)
     version = cpt.get("version", "v1")
@@ -20,7 +26,7 @@ def get_synthesizer(cpt: OrderedDict, device=torch.device("cpu")):
     else:
         raise ValueError(f"Unsupported synthesizer version: {version}")
     net_g = SynthesizerTrnMsNSFsid(
-        *cpt["config"],
+        *synthesizer_config_args(cpt["config"]),
         encoder_dim=encoder_dim,
         use_f0=if_f0 == 1,
     )
@@ -32,9 +38,14 @@ def get_synthesizer(cpt: OrderedDict, device=torch.device("cpu")):
     return net_g, cpt
 
 
-def load_synthesizer(pth_path: FileLike, device=torch.device("cpu")):  # type: ignore
+def load_synthesizer(
+    pth_path: FileLike, device: int | str | torch.device = torch.device("cpu")
+) -> tuple[SynthesizerTrnMsNSFsid, RvcCheckpoint]:
     return get_synthesizer(
-        torch.load(pth_path, map_location=torch.device("cpu"), weights_only=True),
+        cast(
+            RvcCheckpoint,
+            torch.load(pth_path, map_location=torch.device("cpu"), weights_only=True),
+        ),
         device,
     )
 
@@ -57,7 +68,6 @@ def synthesizer_jit_export(
         device = torch.device("cuda:0")
 
     model, cpt = load_synthesizer(model_path, device)
-    assert isinstance(cpt, dict)
     model.forward = model.infer
     inputs: dict[str, torch.Tensor] | None = None
     device_str = str(device)
@@ -66,8 +76,8 @@ def synthesizer_jit_export(
             raise ValueError("inputs_path is required when mode is 'trace'")
         inputs = load_inputs(inputs_path, device_str, is_half)
     ckpt = export_jit_model(model, mode, inputs, device, is_half)
-    cpt.pop("weight")
-    cpt["model"] = ckpt["model"]
-    cpt["device"] = device
-    save_pickle(cpt, save_path)
-    return cpt
+    jit_cpt = cast(JitRvcCheckpoint, dict(cpt))
+    jit_cpt["model"] = ckpt["model"]
+    jit_cpt["device"] = device
+    save_pickle(cast(dict[str, Any], dict(jit_cpt)), save_path)
+    return jit_cpt

@@ -1,2 +1,3 @@
 from .infer import RVC
-from .exporter import export_onnx
+
+__all__ = ["RVC"]

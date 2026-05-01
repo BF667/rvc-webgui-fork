@@ -13,7 +13,7 @@ from torchaudio.transforms import Resample
 
 from lib.f0 import ALL_PITCH_METHODS, Generator, PitchMethod
 from lib.synthesizer import load_synthesizer
-from lib.types import FileLike
+from lib.types import FileLike, synthesizer_target_sr
 
 type F0Pair = tuple[np.ndarray, np.ndarray]
 
@@ -101,7 +101,7 @@ class RVC:
 
         def set_default_model():
             self.net_g, cpt = load_synthesizer(self.pth_path, self.device)
-            self.tgt_sr = cpt["config"][-1]
+            self.tgt_sr = synthesizer_target_sr(cpt["config"])
             cpt["config"][-3] = cpt["weight"]["emb_g.weight"].shape[0]
             self.if_f0 = cpt.get("f0", 1)
             self.version = cpt.get("version", "v1")

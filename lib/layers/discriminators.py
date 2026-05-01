@@ -16,9 +16,7 @@ class MultiPeriodDiscriminator(torch.nn.Module):
     version: 'v1' or 'v2'
     """
 
-    def __init__(
-        self, version: str, use_spectral_norm: bool = False, has_xpu: bool = False
-    ):
+    def __init__(self, version: str, use_spectral_norm: bool = False):
         super(MultiPeriodDiscriminator, self).__init__()
         periods = (
             (2, 3, 5, 7, 11, 17) if version == "v1" else (2, 3, 5, 7, 11, 17, 23, 37)
@@ -28,9 +26,7 @@ class MultiPeriodDiscriminator(torch.nn.Module):
             [
                 DiscriminatorS(use_spectral_norm=use_spectral_norm),
                 *(
-                    DiscriminatorP(
-                        i, use_spectral_norm=use_spectral_norm, has_xpu=has_xpu
-                    )
+                    DiscriminatorP(i, use_spectral_norm=use_spectral_norm)
                     for i in periods
                 ),
             ]
@@ -108,11 +104,9 @@ class DiscriminatorP(torch.nn.Module):
         kernel_size: int = 5,
         stride: int = 3,
         use_spectral_norm: bool = False,
-        has_xpu: bool = False,
     ):
         super(DiscriminatorP, self).__init__()
         self.period = period
-        self.has_xpu = has_xpu
         norm_f = spectral_norm if use_spectral_norm else weight_norm
         sequence = (1, 32, 128, 512, 1024)
         convs_padding = (get_padding(kernel_size, 1), 0)
@@ -153,12 +147,7 @@ class DiscriminatorP(torch.nn.Module):
         b, c, t = x.shape
         if t % self.period != 0:  # pad first
             n_pad = self.period - (t % self.period)
-            if self.has_xpu and x.dtype == torch.bfloat16:
-                x = F.pad(x.to(dtype=torch.float16), (0, n_pad), "reflect").to(
-                    dtype=torch.bfloat16
-                )
-            else:
-                x = F.pad(x, (0, n_pad), "reflect")
+            x = F.pad(x, (0, n_pad), "reflect")
             t = t + n_pad
         x = x.view(b, c, t // self.period, self.period)
 
