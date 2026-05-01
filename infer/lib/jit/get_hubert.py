@@ -336,10 +336,12 @@ def get_hubert_model(
 
     def infer(source, padding_mask, output_layer: torch.Tensor):
         output_layer_id = int(output_layer.item())
+        if output_layer_id != 12:
+            raise ValueError("Only v2 HuBERT output_layer=12 is supported.")
         logits = hubert_model.extract_features(
             source=source, padding_mask=padding_mask, output_layer=output_layer_id
         )
-        feats = hubert_model.final_proj(logits[0]) if output_layer_id == 9 else logits[0]
+        feats = logits[0]
         return feats
 
     hubert_model.infer = infer

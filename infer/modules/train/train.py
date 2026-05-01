@@ -44,14 +44,13 @@ from infer.lib.train.data_utils import (
     TextAudioLoaderMultiNSFsid,
 )
 
-if hps.version == "v1":
-    from infer.lib.infer_pack.models import MultiPeriodDiscriminator
-    from infer.lib.infer_pack.models import SynthesizerTrnMs256NSFsid as RVC_Model_f0
-else:
-    from infer.lib.infer_pack.models import (
-        SynthesizerTrnMs768NSFsid as RVC_Model_f0,
-        MultiPeriodDiscriminatorV2 as MultiPeriodDiscriminator,
-    )
+if hps.version != "v2" or int(hps.if_f0) != 1:
+    raise ValueError("Training only supports v2 models with f0 enabled.")
+
+from infer.lib.infer_pack.models import (
+    MultiPeriodDiscriminatorV2 as MultiPeriodDiscriminator,
+    SynthesizerTrnMs768NSFsid as RVC_Model_f0,
+)
 
 from infer.lib.train.losses import (
     discriminator_loss,

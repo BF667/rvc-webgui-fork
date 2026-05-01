@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 import numpy as np
 import torch
 from infer.lib.infer_pack.models import (
-    SynthesizerTrnMs256NSFsid,
     SynthesizerTrnMs768NSFsid,
 )
 from infer.modules.vc.pipeline import Pipeline
@@ -59,9 +58,7 @@ class VC:
         self.n_spk: int | None = None
         self.tgt_sr: int | None = None
         self.net_g: (
-            SynthesizerTrnMs256NSFsid
-            | SynthesizerTrnMs768NSFsid
-            | None
+            SynthesizerTrnMs768NSFsid | None
         ) = None
         self.pipeline: Pipeline | None = None
         self.cpt: RvcCheckpoint | None = None
@@ -107,13 +104,8 @@ class VC:
                 # You just have to follow this instruction to clear it.
                 cpt = self.cpt
                 if cpt is not None:
-                    self.version = cpt.get("version", "v1")
-                    if self.version == "v1":
-                        self.net_g = SynthesizerTrnMs256NSFsid(
-                            *synthesizer_config_args_with_sr(cpt["config"]),
-                            is_half=self.config.is_half,
-                        )
-                    elif self.version == "v2":
+                    self.version = cpt.get("version", "v2")
+                    if self.version == "v2" and cpt.get("f0", 1) == 1:
                         self.net_g = SynthesizerTrnMs768NSFsid(
                             *synthesizer_config_args_with_sr(cpt["config"]),
                             is_half=self.config.is_half,
@@ -139,16 +131,11 @@ class VC:
         )
         self.tgt_sr = synthesizer_target_sr(self.cpt["config"])
         self.cpt["config"][-3] = self.cpt["weight"]["emb_g.weight"].shape[0]  # n_spk
-        self.version = self.cpt.get("version", "v1")
+        self.version = self.cpt.get("version", "v2")
+        if self.version != "v2" or self.cpt.get("f0", 1) != 1:
+            raise ValueError("Only v2 models with f0 are supported.")
 
-        synthesizer_class = {
-            "v1": SynthesizerTrnMs256NSFsid,
-            "v2": SynthesizerTrnMs768NSFsid,
-        }
-
-        self.net_g = synthesizer_class.get(
-            self.version, SynthesizerTrnMs256NSFsid
-        )(
+        self.net_g = SynthesizerTrnMs768NSFsid(
             *synthesizer_config_args_with_sr(self.cpt["config"]),
             is_half=self.config.is_half,
         )

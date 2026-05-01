@@ -62,6 +62,8 @@ else:
     raise ValueError("Expected positional arguments: device [i_gpu] exp_dir version is_half")
 exp_dir = parsed_args.exp_dir
 version = parsed_args.version
+if version != "v2":
+    raise ValueError("Only v2 feature extraction is supported.")
 is_half = parse_bool(parsed_args.is_half)
 import fairseq
 import numpy as np
@@ -97,7 +99,7 @@ model_path = "assets/hubert/hubert_base.pt"
 
 logger.info(f"Feature extraction output directory: {exp_dir}")
 wavPath = exp_dir / "1_16k_wavs"
-outPath = exp_dir / "3_feature256" if version == "v1" else exp_dir / "3_feature768"
+outPath = exp_dir / "3_feature768"
 outPath.mkdir(parents=True, exist_ok=True)
 
 
@@ -204,13 +206,11 @@ else:
                             else feats.to(device)
                         ),
                         "padding_mask": padding_mask.to(device),
-                        "output_layer": 9 if version == "v1" else 12,  # layer 9
+                        "output_layer": 12,
                     }
                     with torch.no_grad():
                         logits = model.extract_features(**inputs)
-                        feats = (
-                            model.final_proj(logits[0]) if version == "v1" else logits[0]
-                        )
+                        feats = logits[0]
 
                     feats = feats.squeeze(0).float().cpu().numpy()
                     if np.isnan(feats).sum() == 0:

@@ -22,9 +22,8 @@ def change_info_(ckpt_path):
             first_line = next((line for line in f.read().splitlines() if line.strip()), "")
             payload = json.loads(first_line)
             info = payload["record"]["extra"]["hparams"]
-            sr, f0 = info["sample_rate"], info["if_f0"]
-            version = "v2" if ("version" in info and info["version"] == "v2") else "v1"
-            return sr, str(f0), version
+            sr = info["sample_rate"]
+            return sr, "1", "v2"
     except Exception:
         traceback.print_exc()
         return {"__type__": "update"}, {"__type__": "update"}, {"__type__": "update"}
@@ -47,15 +46,15 @@ def create_ckpt_processing_tab():
             with gr.Row():
                 sr_ = gr.Radio(
                     label=i18n("Target sample rate"),
-                    choices=["40k", "48k"],
-                    value="40k",
+                    choices=["32k", "48k"],
+                    value="48k",
                     interactive=True,
                 )
                 if_f0_ = gr.Radio(
                     label=i18n("Does the model have pitch guidance?"),
-                    choices=[i18n("Yes"), i18n("No")],
+                    choices=[i18n("Yes")],
                     value=i18n("Yes"),
-                    interactive=True,
+                    interactive=False,
                 )
                 info__ = gr.Textbox(
                     label=i18n("Model info to insert"),
@@ -71,9 +70,9 @@ def create_ckpt_processing_tab():
                 )
                 version_2 = gr.Radio(
                     label=i18n("Model version type"),
-                    choices=["v1", "v2"],
-                    value="v1",
-                    interactive=True,
+                    choices=["v2"],
+                    value="v2",
+                    interactive=False,
                 )
             with gr.Row():
                 but6 = gr.Button(i18n("Fuse"), variant="primary")
@@ -148,21 +147,21 @@ def create_ckpt_processing_tab():
                 save_name = gr.Textbox(label=i18n("Save name"), value="", interactive=True)
                 sr__ = gr.Radio(
                     label=i18n("Target sample rate"),
-                    choices=["32k", "40k", "48k"],
-                    value="40k",
+                    choices=["32k", "48k"],
+                    value="48k",
                     interactive=True,
                 )
                 if_f0__ = gr.Radio(
                     label=i18n("Does the model have pitch guidance? 1 for yes, 0 for no"),
-                    choices=["1", "0"],
+                    choices=["1"],
                     value="1",
-                    interactive=True,
+                    interactive=False,
                 )
                 version_1 = gr.Radio(
                     label=i18n("Model version type"),
-                    choices=["v1", "v2"],
+                    choices=["v2"],
                     value="v2",
-                    interactive=True,
+                    interactive=False,
                 )
                 info___ = gr.Textbox(
                     label=i18n("Model info to insert"),

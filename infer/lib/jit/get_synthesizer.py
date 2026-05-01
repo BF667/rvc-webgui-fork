@@ -3,20 +3,16 @@ import torch
 
 def get_synthesizer(pth_path, device=torch.device("cpu")):
     from infer.lib.infer_pack.models import (
-        SynthesizerTrnMs256NSFsid,
         SynthesizerTrnMs768NSFsid,
     )
 
     cpt = torch.load(pth_path, map_location=torch.device("cpu"), weights_only=False)
     # tgt_sr = cpt["config"][-1]
     cpt["config"][-3] = cpt["weight"]["emb_g.weight"].shape[0]
-    version = cpt.get("version", "v1")
-    if version == "v1":
-        net_g = SynthesizerTrnMs256NSFsid(*cpt["config"], is_half=False)
-    elif version == "v2":
-        net_g = SynthesizerTrnMs768NSFsid(*cpt["config"], is_half=False)
-    else:
-        raise ValueError(f"Unsupported synthesizer version: {version}")
+    version = cpt.get("version", "v2")
+    if version != "v2" or cpt.get("f0", 1) != 1:
+        raise ValueError("Only v2 models with f0 are supported.")
+    net_g = SynthesizerTrnMs768NSFsid(*cpt["config"], is_half=False)
     del net_g.enc_q
     # net_g.forward = net_g.infer
     # ckpt = {}

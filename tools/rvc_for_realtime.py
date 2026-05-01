@@ -17,10 +17,7 @@ import torch.nn.functional as F
 from fairseq.data.dictionary import Dictionary
 from torch.serialization import safe_globals
 
-from infer.lib.infer_pack.models import (
-    SynthesizerTrnMs256NSFsid,
-    SynthesizerTrnMs768NSFsid,
-)
+from infer.lib.infer_pack.models import SynthesizerTrnMs768NSFsid
 from lib.f0 import ALL_PITCH_METHODS, Generator, PitchMethod
 
 now_dir = os.getcwd()
@@ -120,7 +117,9 @@ class RVC:
                 self.tgt_sr = cpt["config"][-1]
                 cpt["config"][-3] = cpt["weight"]["emb_g.weight"].shape[0]
                 self.if_f0 = cpt.get("f0", 1)
-                self.version = cpt.get("version", "v1")
+                self.version = cpt.get("version", "v2")
+                if self.version != "v2" or self.if_f0 != 1:
+                    raise ValueError("Only v2 models with f0 are supported.")
                 if self.is_half:
                     self.net_g = self.net_g.half()
                 else:
@@ -156,7 +155,9 @@ class RVC:
                     raise RuntimeError("JIT checkpoint failed to load")
                 self.tgt_sr = cpt["config"][-1]
                 self.if_f0 = cpt.get("f0", 1)
-                self.version = cpt.get("version", "v1")
+                self.version = cpt.get("version", "v2")
+                if self.version != "v2" or self.if_f0 != 1:
+                    raise ValueError("Only v2 models with f0 are supported.")
                 self.net_g = torch.jit.load(
                     BytesIO(cpt["model"]), map_location=self.device
                 )
@@ -246,12 +247,10 @@ class RVC:
             inputs = {
                 "source": feats,
                 "padding_mask": padding_mask,
-                "output_layer": 9 if self.version == "v1" else 12,
+                "output_layer": 12,
             }
             logits = self.model.extract_features(**inputs)
-            feats = (
-                self.model.final_proj(logits[0]) if self.version == "v1" else logits[0]
-            )
+            feats = logits[0]
             feats = torch.cat((feats, feats[:, -1:, :]), 1)
         t2 = ttime()
         try:

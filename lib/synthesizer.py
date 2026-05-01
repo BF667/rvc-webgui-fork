@@ -18,17 +18,13 @@ def get_synthesizer(
 ) -> tuple[SynthesizerTrnMsNSFsid, RvcCheckpoint]:
     cpt["config"][-3] = cpt["weight"]["emb_g.weight"].shape[0]
     if_f0 = cpt.get("f0", 1)
-    version = cpt.get("version", "v1")
-    if version == "v1":
-        encoder_dim = 256
-    elif version == "v2":
-        encoder_dim = 768
-    else:
-        raise ValueError(f"Unsupported synthesizer version: {version}")
+    version = cpt.get("version", "v2")
+    if version != "v2" or if_f0 != 1:
+        raise ValueError("Only v2 models with f0 are supported.")
     net_g = SynthesizerTrnMsNSFsid(
         *synthesizer_config_args(cpt["config"]),
-        encoder_dim=encoder_dim,
-        use_f0=if_f0 == 1,
+        encoder_dim=768,
+        use_f0=True,
     )
     del net_g.enc_q
     net_g.load_state_dict(cpt["weight"], strict=False)

@@ -1,5 +1,3 @@
-from typing import Literal
-
 import torch
 from torch import nn
 from torch.nn import Conv1d, Conv2d
@@ -12,15 +10,9 @@ from .utils import get_padding
 
 
 class MultiPeriodDiscriminator(torch.nn.Module):
-    """
-    version: 'v1' or 'v2'
-    """
-
-    def __init__(self, version: Literal["v1", "v2"], use_spectral_norm: bool = False):
+    def __init__(self, use_spectral_norm: bool = False):
         super().__init__()
-        periods = (
-            (2, 3, 5, 7, 11, 17) if version == "v1" else (2, 3, 5, 7, 11, 17, 23, 37)
-        )
+        periods = (2, 3, 5, 7, 11, 17, 23, 37)
 
         self.discriminators = nn.ModuleList(
             [

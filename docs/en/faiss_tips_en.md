@@ -8,8 +8,8 @@ Approximate Neighbor Search finds similar vectors quickly while sacrificing some
 In RVC, for the embedding of features converted by HuBERT, we search for embeddings similar to the embedding generated from the training data and mix them to achieve a conversion that is closer to the original speech. However, since this search takes time if performed naively, high-speed conversion is realized by using approximate neighborhood search.
 
 # implementation overview
-In '/logs/your-experiment/3_feature256' where the model is located, features extracted by HuBERT from each voice data are located.
-From here we read the npy files in order sorted by filename and concatenate the vectors to create big_npy. (This vector has shape [N, 256].)
+In '/logs/your-experiment/3_feature768' where the model is located, features extracted by HuBERT from each voice data are located.
+From here we read the npy files in order sorted by filename and concatenate the vectors to create big_npy. (This vector has shape [N, 768].)
 After saving big_npy as /logs/your-experiment/total_fea.npy, train it with faiss.
 
 In this article, I will explain the meaning of these parameters.
@@ -21,7 +21,7 @@ This allows you to try various approximate neighborhood search methods simply by
 In RVC it is used like this:
 
 ```python
-index = faiss.index_factory(256, "IVF%s,Flat" % n_ivf)
+index = faiss.index_factory(768, "IVF%s,Flat" % n_ivf)
 ```
 Among the arguments of index_factory, the first is the number of dimensions of the vector, the second is the index factory string, and the third is the distance to use.
 

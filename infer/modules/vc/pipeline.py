@@ -6,10 +6,7 @@ from pathlib import Path
 from typing import Protocol, TypeAlias
 
 from configs.config import Config
-from infer.lib.infer_pack.models import (
-    SynthesizerTrnMs256NSFsid,
-    SynthesizerTrnMs768NSFsid,
-)
+from infer.lib.infer_pack.models import SynthesizerTrnMs768NSFsid
 
 import gradio as gr
 
@@ -38,10 +35,7 @@ class NamedFile(Protocol):
     name: str
 
 
-RVCModel: TypeAlias = (
-    SynthesizerTrnMs256NSFsid
-    | SynthesizerTrnMs768NSFsid
-)
+RVCModel: TypeAlias = SynthesizerTrnMs768NSFsid
 
 
 def change_rms(
@@ -134,6 +128,8 @@ class Pipeline:
         version: str,
         protect: float,
     ) -> np.ndarray:  # ,file_index,file_big_npy
+        if version != "v2":
+            raise ValueError("Only v2 models with f0 are supported.")
         feats = torch.from_numpy(audio)
         if self.is_half:
             try:
@@ -155,12 +151,12 @@ class Pipeline:
         inputs = {
             "source": feats.to(self.device),
             "padding_mask": padding_mask,
-            "output_layer": 9 if version == "v1" else 12,
+            "output_layer": 12,
         }
         t0 = ttime()
         with torch.no_grad():
             logits = model.extract_features(**inputs)
-            feats = model.final_proj(logits[0]) if version == "v1" else logits[0]
+            feats = logits[0]
         feats0: torch.Tensor | None = None
         if protect < 0.5 and pitch is not None and pitchf is not None:
             feats0 = feats.clone()

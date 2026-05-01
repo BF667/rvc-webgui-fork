@@ -54,7 +54,6 @@ def main():
     assets_dir = BASE_DIR / "assets"
     hubert_dir = assets_dir / "hubert"
     rmvpe_dir = assets_dir / "rmvpe"
-    pretrained_dir = assets_dir / "pretrained"
     pretrained_v2_dir = assets_dir / "pretrained_v2"
 
     # List of models to download
@@ -64,17 +63,9 @@ def main():
     }
 
     pretrained_models = [
-        "D32k.pth",
-        "D40k.pth",
-        "D48k.pth",
-        "G32k.pth",
-        "G40k.pth",
-        "G48k.pth",
         "f0D32k.pth",
-        "f0D40k.pth",
         "f0D48k.pth",
         "f0G32k.pth",
-        "f0G40k.pth",
         "f0G48k.pth",
     ]
 
@@ -82,11 +73,7 @@ def main():
     for model, path in core_models.items():
         dl_model(RVC_DOWNLOAD_LINK, model, path)
 
-    # Download pretrained models (v1)
-    for model in pretrained_models:
-        dl_model(RVC_DOWNLOAD_LINK + "pretrained/", model, pretrained_dir)
-
-    # Download pretrained models v2
+    # Download v2 f0 pretrained models.
     for model in pretrained_models:
         dl_model(RVC_DOWNLOAD_LINK + "pretrained_v2/", model, pretrained_v2_dir)
 
