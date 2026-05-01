@@ -150,7 +150,7 @@ class TextAudioLoaderMultiNSFsid(torch.utils.data.Dataset):
 class TextAudioCollateMultiNSFsid:
     """Zero-pads model inputs and targets"""
 
-    def __init__(self, return_ids=False):
+    def __init__(self, return_ids: bool = False):
         self.return_ids = return_ids
 
     def __call__(self, batch):
