@@ -289,7 +289,7 @@ def load_wav_to_torch(full_path: Path):
     return torch.FloatTensor(data.astype(np.float32)), sampling_rate
 
 
-def load_filepaths_and_text(filename: Path, split: str = "|") -> list[tuple[Path, Path, Path, Path, str]] | list[tuple[Path, Path, str]]:
+def load_filepaths_and_text(filename: Path, split: str = "|") -> list[tuple[Path, Path, Path, Path, str]]:
     try:
         with open(filename, encoding="utf-8") as f:
             lines = f.readlines()
@@ -297,15 +297,15 @@ def load_filepaths_and_text(filename: Path, split: str = "|") -> list[tuple[Path
         with open(filename) as f:
             lines = f.readlines()
 
-    res = []
+    res: list[tuple[Path, Path, Path, Path, str]] = []
     for line in lines:
         parts = line.strip().split(split)
-        if len(parts) == 5:
-            res.append((Path(parts[0]), Path(parts[1]), Path(parts[2]), Path(parts[3]), parts[4]))
-        elif len(parts) == 3:
-            res.append((Path(parts[0]), Path(parts[1]), parts[2]))
-        else:
-            raise ValueError(f"Unexpected number of parts in {filename}: {len(parts)}")
+        if len(parts) != 5:
+            raise ValueError(
+                f"Expected 5 pipe-separated fields (audiopath|phone|pitch|pitchf|dv) "
+                f"in {filename}, got {len(parts)}: {line.strip()!r}"
+            )
+        res.append((Path(parts[0]), Path(parts[1]), Path(parts[2]), Path(parts[3]), parts[4]))
 
     return res
 
