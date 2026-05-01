@@ -78,7 +78,7 @@ class RVC:
                 self.index = faiss.read_index(index_path)
                 self.big_npy = self.index.reconstruct_n(0, self.index.ntotal)
                 printt("Index search enabled")
-            self.pth_path: str = pth_path
+            self.pth_path: Path = Path(pth_path)
             self.index_path = index_path
             self.index_rate = index_rate
             self.cache_pitch: torch.Tensor = torch.zeros(
@@ -129,13 +129,13 @@ class RVC:
                     self.net_g = self.net_g.float()
 
             def set_jit_model():
-                jit_pth_path = self.pth_path.rstrip(".pth")
-                jit_pth_path += ".half.jit" if self.is_half else ".jit"
+                jit_pth_path = self.pth_path.with_suffix("")
+                jit_pth_path = jit_pth_path.with_suffix(".half.jit" if self.is_half else ".jit")
                 reload = False
                 cpt = None
                 if str(self.device) == "cuda":
                     self.device = torch.device("cuda:0")
-                if os.path.exists(jit_pth_path):
+                if jit_pth_path.exists():
                     cpt = jit.load(jit_pth_path)
                     model_device = cpt["device"]
                     if model_device != str(self.device):
