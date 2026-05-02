@@ -346,15 +346,15 @@ class MultiHeadAttention(nn.Module):
         x = F.pad(
             x,
             #   commons.convert_pad_shape([[0, 0], [0, 0], [0, 0], [0, 1]])
-            [0, 1, 0, 0, 0, 0, 0, 0],
+            (0, 1, 0, 0, 0, 0, 0, 0),
         )
 
         # Concat extra elements so to add up to shape (len+1, 2*len-1).
-        x_flat = x.view([batch, heads, length * 2 * length])
+        x_flat = x.view((batch, heads, length * 2 * length))
         x_flat = F.pad(
             x_flat,
             # commons.convert_pad_shape([[0, 0], [0, 0], [0, int(length) - 1]])
-            [0, int(length) - 1, 0, 0, 0, 0],
+            (0, length - 1, 0, 0, 0, 0),
         )
 
         # Reshape and slice out the padded elements.
@@ -373,14 +373,14 @@ class MultiHeadAttention(nn.Module):
         x = F.pad(
             x,
             # commons.convert_pad_shape([[0, 0], [0, 0], [0, 0], [0, int(length) - 1]])
-            [0, int(length) - 1, 0, 0, 0, 0, 0, 0],
+            (0, length - 1, 0, 0, 0, 0, 0, 0),
         )
-        x_flat = x.view([batch, heads, int(length**2) + int(length * (length - 1))])
+        x_flat = x.view((batch, heads, (length**2) + (length * (length - 1))))
         # add 0's in the beginning that will skew the elements after reshape
         x_flat = F.pad(
             x_flat,
             #    commons.convert_pad_shape([[0, 0], [0, 0], [int(length), 0]])
-            [length, 0, 0, 0, 0, 0],
+            (length, 0, 0, 0, 0, 0),
         )
         x_final = x_flat.view([batch, heads, length, 2 * length])[:, :, :, 1:]
         return x_final
@@ -453,7 +453,7 @@ class FFN(nn.Module):
         x = F.pad(
             x,
             #   commons.convert_pad_shape(padding)
-            [pad_l, pad_r, 0, 0, 0, 0],
+            (pad_l, pad_r, 0, 0, 0, 0),
         )
         return x
 
@@ -466,6 +466,6 @@ class FFN(nn.Module):
         x = F.pad(
             x,
             #   commons.convert_pad_shape(padding)
-            [pad_l, pad_r, 0, 0, 0, 0],
+            (pad_l, pad_r, 0, 0, 0, 0),
         )
         return x
